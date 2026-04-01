@@ -183,7 +183,7 @@ def get_graph_entities(graph_id: str):
         
         storage = current_app.extensions.get('neo4j_storage')
         if not storage:
-            raise ValueError("GraphStorage not initialized")
+            return jsonify({"success": False, "error": "GraphStorage not initialized — check Neo4j connection"}), 503
         reader = EntityReader(storage)
         result = reader.filter_defined_entities(
             graph_id=graph_id,
@@ -211,7 +211,7 @@ def get_entity_detail(graph_id: str, entity_uuid: str):
     try:
         storage = current_app.extensions.get('neo4j_storage')
         if not storage:
-            raise ValueError("GraphStorage not initialized")
+            return jsonify({"success": False, "error": "GraphStorage not initialized — check Neo4j connection"}), 503
         reader = EntityReader(storage)
         entity = reader.get_entity_with_context(graph_id, entity_uuid)
         
@@ -240,10 +240,10 @@ def get_entities_by_type(graph_id: str, entity_type: str):
     """Get all entities of specified type"""
     try:
         enrich = request.args.get('enrich', 'true').lower() == 'true'
-        
+
         storage = current_app.extensions.get('neo4j_storage')
         if not storage:
-            raise ValueError("GraphStorage not initialized")
+            return jsonify({"success": False, "error": "GraphStorage not initialized — check Neo4j connection"}), 503
         reader = EntityReader(storage)
         entities = reader.get_entities_by_type(
             graph_id=graph_id,
@@ -578,10 +578,10 @@ def prepare_simulation():
         parallel_profile_count = data.get('parallel_profile_count', 5)
         world_context = data.get('world_context')  # Optional population simulation result
         
-        # ========== Get GraphStorage（Capture reference before background task starts） ==========
+        # Get GraphStorage before spawning background thread (current_app unavailable in threads)
         storage = current_app.extensions.get('neo4j_storage')
         if not storage:
-            raise ValueError("GraphStorage not initialized — check Neo4j connection")
+            return jsonify({"success": False, "error": "GraphStorage not initialized — check Neo4j connection"}), 503
 
         # ========== Synchronously get entity count（Before background task starts） ==========
         # This way frontend when callingprepareCan immediately getExpected total agents
@@ -737,12 +737,6 @@ def prepare_simulation():
             }
         })
         
-    except ValueError as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 404
-        
     except Exception as e:
         logger.error(f"Failed to start preparation task: {str(e)}")
         return jsonify({
@@ -820,7 +814,7 @@ def get_prepare_status():
                 })
             return jsonify({
                 "success": False,
-                "error": "Please provide task_id Or simulation_id"
+                "error": "Please provide task_id or simulation_id"
             }), 400
         
         task_manager = TaskManager()

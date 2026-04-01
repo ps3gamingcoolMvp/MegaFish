@@ -257,7 +257,7 @@ def chat_with_report_agent():
 
         storage = current_app.extensions.get('neo4j_storage')
         if not storage:
-            raise ValueError("GraphStorage not initialized — check Neo4j connection")
+            return jsonify({"success": False, "error": "GraphStorage not initialized — check Neo4j connection"}), 503
         graph_tools = GraphToolsService(storage=storage)
 
         agent = ReportAgent(
@@ -401,7 +401,7 @@ def search_graph_tool():
             return jsonify({"success": False, "error": "Please provide graph_id and query"}), 400
         storage = current_app.extensions.get('neo4j_storage')
         if not storage:
-            raise ValueError("GraphStorage not initialized — check Neo4j connection")
+            return jsonify({"success": False, "error": "GraphStorage not initialized — check Neo4j connection"}), 503
         tools = GraphToolsService(storage=storage)
         result = tools.search_graph(graph_id=graph_id, query=query, limit=limit)
         return jsonify({"success": True, "data": result.to_dict()})
@@ -419,7 +419,7 @@ def get_graph_statistics_tool():
             return jsonify({"success": False, "error": "Please provide graph_id"}), 400
         storage = current_app.extensions.get('neo4j_storage')
         if not storage:
-            raise ValueError("GraphStorage not initialized — check Neo4j connection")
+            return jsonify({"success": False, "error": "GraphStorage not initialized — check Neo4j connection"}), 503
         tools = GraphToolsService(storage=storage)
         result = tools.get_graph_statistics(graph_id)
         return jsonify({"success": True, "data": result})
