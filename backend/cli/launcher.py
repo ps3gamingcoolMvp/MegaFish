@@ -4,6 +4,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import webbrowser
 from pathlib import Path
@@ -19,6 +20,7 @@ _FRONTEND_DIR = _ROOT / "frontend"
 
 # Tracked subprocesses
 _procs: list[subprocess.Popen] = []
+_backend_log = None
 
 
 def _port_open(host: str, port: int, timeout: float = 1.0) -> bool:
@@ -69,19 +71,56 @@ def _wait_for(check_fn, label: str, timeout: int = 30) -> bool:
     return False
 
 
+def _kill_port(port: int):
+    """Kill any process listening on the given port."""
+    try:
+        result = subprocess.run(
+            ["lsof", "-ti", f":{port}"],
+            capture_output=True, text=True,
+        )
+        pids = result.stdout.strip().split()
+        for pid in pids:
+            if pid:
+                subprocess.run(["kill", "-9", pid], check=False)
+        time.sleep(1)
+    except Exception:
+        pass
+
+
 def start_backend() -> bool:
+    global _backend_log
     status("Starting backend...")
+
+    # Kill any stale process occupying port 5001
+    if _port_open("localhost", 5001):
+        status("Port 5001 in use — killing stale process...")
+        _kill_port(5001)
+        if _port_open("localhost", 5001):
+            error("Port 5001 is still in use. Free it with: kill $(lsof -ti :5001)")
+            return False
+
     python = _BACKEND_DIR / ".venv" / "bin" / "python"
     if not python.exists():
         python = Path(sys.executable)
+    _backend_log = tempfile.NamedTemporaryFile(delete=False, suffix=".log")
     proc = subprocess.Popen(
         [str(python), "run.py"],
         cwd=str(_BACKEND_DIR),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=_backend_log,
+        stderr=_backend_log,
     )
     _procs.append(proc)
-    return _wait_for(check_backend, "Backend", timeout=30)
+    ok = _wait_for(check_backend, "Backend", timeout=30)
+    if not ok:
+        _backend_log.flush()
+        try:
+            lines = Path(_backend_log.name).read_text().splitlines()[-10:]
+            for line in lines:
+                error(f"  {line}")
+        except Exception:
+            pass
+        error(f"Full log: {_backend_log.name}")
+    return ok
 
 
 def start_frontend() -> int | None:
@@ -102,8 +141,8 @@ def start_frontend() -> int | None:
     return None
 
 
-def ensure_services() -> int:
-    """Check all 4 services, start what's missing. Returns frontend port."""
+def ensure_services() -> bool:
+    """Check all 4 services, start what's missing. Returns False if backend fails to start."""
     # Neo4j
     if check_neo4j():
         success("Neo4j        running")
@@ -120,21 +159,20 @@ def ensure_services() -> int:
     if check_backend():
         success("Backend       running")
     else:
-        start_backend()
-        if check_backend():
-            success("Backend       started")
+        if not start_backend():
+            return False
+        success("Backend       started")
 
     # Frontend
     port = check_frontend()
     if port:
         success(f"Frontend      running  →  http://localhost:{port}")
-        return port
     else:
         port = start_frontend()
         if port:
             success(f"Frontend      started  →  http://localhost:{port}")
-            return port
-        return 3000
+
+    return True
 
 
 def open_browser(url: str):
@@ -148,3 +186,6 @@ def stop_all():
         except Exception:
             pass
     _procs.clear()
+    # Also kill any backend process on port 5001 that we may not have a handle to
+    if _port_open("localhost", 5001):
+        _kill_port(5001)

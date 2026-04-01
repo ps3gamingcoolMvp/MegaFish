@@ -9,12 +9,11 @@ from . import installer, launcher
 from . import ui
 from .client import (
     build_graph,
-    create_project,
     create_simulation,
+    generate_ontology,
     get_result_url,
     poll_simulation,
     poll_task,
-    upload_file,
 )
 
 app = typer.Typer(
@@ -24,11 +23,16 @@ app = typer.Typer(
 )
 
 
+SUBCOMMANDS = {"install", "update", "uninstall", "status", "stop", "help"}
+
+
 @app.callback()
-def _default(ctx: typer.Context, prompt: str = typer.Argument(None)):
+def _default(ctx: typer.Context):
     """Run MegaFish: simulate public reaction to any scenario."""
     if ctx.invoked_subcommand is not None:
         return
+    raw = sys.argv[1] if len(sys.argv) > 1 else None
+    prompt = raw if raw and raw not in SUBCOMMANDS else None
     try:
         if not installer.is_installed():
             installer.run_install()
@@ -38,7 +42,9 @@ def _default(ctx: typer.Context, prompt: str = typer.Argument(None)):
             prompt = ui.prompt_box()
         file_path = ui.ask_file()
         ui.console.print()
-        launcher.ensure_services()
+        if not launcher.ensure_services():
+            ui.error("Backend failed to start. Check the log above.")
+            raise SystemExit(1)
         ui.console.print()
         with ui.progress("Running simulation...") as prog:
             task = prog.add_task("sim")
@@ -54,24 +60,34 @@ def _default(ctx: typer.Context, prompt: str = typer.Argument(None)):
 
 
 def _run_simulation(prompt: str, file_path: str | None) -> str:
-    """Create project, optionally upload file, build graph, run simulation. Returns result URL."""
-    ui.status("Creating project...")
-    project = create_project(prompt[:80])
-    project_id = project.get("id") or project.get("project_id") or project["data"]["id"]
+    """Upload document, build knowledge graph, create and run simulation. Returns result URL."""
+    # Step 1: Upload document + generate ontology (async)
+    ui.status("Uploading document and generating ontology..." if file_path else "Generating ontology from scenario...")
+    result = generate_ontology(prompt, file_path)
+    data = result.get("data") or result
+    project_id = data.get("project_id")
+    task_id = data.get("task_id")
+    if not project_id:
+        raise RuntimeError(f"Ontology generation failed: {result}")
 
-    if file_path:
-        ui.status(f"Uploading {file_path}...")
-        upload_file(project_id, file_path)
-
-    ui.status("Building knowledge graph...")
-    task = build_graph(project_id)
-    task_id = task.get("task_id") or task.get("id")
     if task_id:
-        poll_task(task_id, on_progress=lambda m: ui.status(f"Graph: {m}"))
+        poll_task(task_id, on_progress=lambda m: ui.status(f"Ontology: {m}"))
 
+    # Step 2: Build knowledge graph (async)
+    ui.status("Building knowledge graph...")
+    graph_resp = build_graph(project_id)
+    graph_data = graph_resp.get("data") or graph_resp
+    graph_task_id = graph_data.get("task_id")
+    if graph_task_id:
+        poll_task(graph_task_id, on_progress=lambda m: ui.status(f"Graph: {m}"))
+
+    # Step 3: Create simulation
     ui.status("Generating agents and running simulation...")
-    sim = create_simulation(project_id)
-    sim_id = sim.get("id") or sim.get("simulation_id") or sim["data"]["id"]
+    sim_resp = create_simulation(project_id)
+    sim_data = sim_resp.get("data") or sim_resp
+    sim_id = sim_data.get("simulation_id") or sim_data.get("id")
+    if not sim_id:
+        raise RuntimeError(f"Simulation creation failed: {sim_resp}")
     poll_simulation(sim_id, on_progress=lambda m: ui.status(f"Sim: {m}"))
 
     port = launcher.check_frontend() or 3000

@@ -1,5 +1,7 @@
 """MegaFish CLI — HTTP client for Flask API."""
 
+import os
+import tempfile
 import time
 from typing import Callable, Optional
 
@@ -8,35 +10,71 @@ import requests
 BASE = "http://localhost:5001"
 
 
-def create_project(name: str) -> dict:
-    r = requests.post(f"{BASE}/api/graph/projects", json={"name": name}, timeout=10)
-    r.raise_for_status()
-    return r.json()
+def generate_ontology(prompt: str, file_path: Optional[str] = None) -> dict:
+    """
+    Create a project, upload document(s), and start async ontology generation.
 
+    If file_path is None, the prompt itself is written to a temporary .txt file
+    so the API (which requires at least one document) still works.
 
-def upload_file(project_id: str, filepath: str) -> dict:
-    with open(filepath, "rb") as f:
-        r = requests.post(
-            f"{BASE}/api/graph/upload",
-            data={"project_id": project_id},
-            files={"file": f},
-            timeout=30,
-        )
-    r.raise_for_status()
-    return r.json()
+    Returns dict with keys: project_id, task_id, status.
+    """
+    _tmp = None
+    try:
+        if file_path:
+            upload_path = file_path
+            fname = os.path.basename(file_path)
+        else:
+            # Write prompt as a synthetic scenario document
+            _tmp = tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", delete=False, encoding="utf-8"
+            )
+            _tmp.write(prompt)
+            _tmp.flush()
+            _tmp.close()
+            upload_path = _tmp.name
+            fname = "scenario.txt"
+
+        with open(upload_path, "rb") as fh:
+            r = requests.post(
+                f"{BASE}/api/graph/ontology/generate",
+                data={
+                    "simulation_requirement": prompt,
+                    "project_name": prompt[:80],
+                },
+                files={"files": (fname, fh)},
+                timeout=30,
+            )
+        r.raise_for_status()
+        return r.json()
+    finally:
+        if _tmp and os.path.exists(_tmp.name):
+            os.unlink(_tmp.name)
 
 
 def build_graph(project_id: str) -> dict:
-    r = requests.post(f"{BASE}/api/graph/build", json={"project_id": project_id}, timeout=10)
+    """Start async graph build for a project that already has ontology generated."""
+    r = requests.post(
+        f"{BASE}/api/graph/build",
+        json={"project_id": project_id},
+        timeout=10,
+    )
     r.raise_for_status()
     return r.json()
 
 
-def poll_task(task_id: str, on_progress: Optional[Callable[[str], None]] = None, interval: int = 2) -> dict:
+def poll_task(
+    task_id: str,
+    on_progress: Optional[Callable[[str], None]] = None,
+    interval: int = 2,
+) -> dict:
+    """Poll GET /api/graph/task/<task_id> until terminal state."""
     while True:
-        r = requests.get(f"{BASE}/api/graph/tasks/{task_id}", timeout=10)
+        r = requests.get(f"{BASE}/api/graph/task/{task_id}", timeout=10)
         r.raise_for_status()
-        data = r.json()
+        payload = r.json()
+        # API wraps result in {"success": true, "data": {...}}
+        data = payload.get("data") or payload
         status = data.get("status", "")
         if on_progress:
             msg = data.get("message") or data.get("progress") or status
@@ -47,21 +85,32 @@ def poll_task(task_id: str, on_progress: Optional[Callable[[str], None]] = None,
 
 
 def create_simulation(project_id: str) -> dict:
-    r = requests.post(f"{BASE}/api/simulation", json={"project_id": project_id}, timeout=10)
+    """Create a new simulation for a project that has a completed graph."""
+    r = requests.post(
+        f"{BASE}/api/simulation/create",
+        json={"project_id": project_id},
+        timeout=10,
+    )
     r.raise_for_status()
     return r.json()
 
 
-def poll_simulation(sim_id: str, on_progress: Optional[Callable[[str], None]] = None, interval: int = 3) -> dict:
+def poll_simulation(
+    sim_id: str,
+    on_progress: Optional[Callable[[str], None]] = None,
+    interval: int = 3,
+) -> dict:
+    """Poll GET /api/simulation/<sim_id> until terminal state."""
     while True:
         r = requests.get(f"{BASE}/api/simulation/{sim_id}", timeout=10)
         r.raise_for_status()
-        data = r.json()
+        payload = r.json()
+        data = payload.get("data") or payload
         status = data.get("status", "")
         if on_progress:
             msg = data.get("message") or data.get("current_round") or status
             on_progress(str(msg))
-        if status in ("completed", "failed", "error"):
+        if status in ("completed", "failed", "error", "stopped"):
             return data
         time.sleep(interval)
 
