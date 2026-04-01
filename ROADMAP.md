@@ -1,8 +1,27 @@
 # MegaFish Roadmap
 
-## Current State (v0.2.0)
+## Current State (v0.2.0) — updated 2026-03-31 after 3 overnight polish sessions
 
 Fully local fork running on Neo4j CE + Ollama. All Zep Cloud dependencies removed. Core pipeline works: upload text → build knowledge graph → entity extraction → simulation → report generation.
+
+### Completed during overnight sessions (not yet in a tagged release)
+- [x] CLI `client.py` corrected to match actual Flask API endpoints
+- [x] Stale Zep Cloud references removed from progress messages and comments
+- [x] Frontend version string and GitHub URL made consistent with package.json / README
+- [x] `.gitignore` and `requirements.txt` translated to English comments
+- [x] `requests` added to `pyproject.toml` (was missing; CLI uses it)
+- [x] Test suite created: 72 tests passing (API, CLI, ontology, SimulationManager, security)
+- [x] 6 backend API endpoints fixed: `raise ValueError` → direct 503 response
+- [x] Docker Compose networking fixed: backend container now uses `neo4j`/`ollama` hostnames
+- [x] Docker Compose health checks added
+- [x] `.env.example` completed with all documented variables
+- [x] `frontend/.env.example` created for `VITE_API_BASE_URL`
+- [x] `megafish update` command hardened to detect both git-clone and install.sh contexts
+- [x] `_world_sim_results` dict bounded to prevent unbounded memory growth
+- [x] CORS origins now configurable via `CORS_ORIGINS` env var (default `*` for local dev)
+- [x] Traceback strings stripped from JSON error responses in non-debug mode
+- [x] All 18 report API route functions documented with docstrings
+- [x] `console.warn`/`console.error` in MainView.vue replaced with in-UI `addLog()` calls
 
 ---
 
@@ -14,6 +33,7 @@ Fully local fork running on Neo4j CE + Ollama. All Zep Cloud dependencies remove
 - [ ] Connection resilience: auto-reconnect to Neo4j on transient failures
 - [ ] Add `/api/status` endpoint showing Neo4j connection state, Ollama model availability, and disk usage
 - [ ] Structured logging with JSON output option
+- [ ] Remove dead code: `Process.vue` (unreachable view) and `generate_python_code()` deprecated function
 
 ### v0.4.0 — Search & Retrieval Improvements
 - [ ] Tune hybrid search weights (currently 0.7 vector / 0.3 BM25) — make configurable per graph
@@ -52,9 +72,11 @@ Fully local fork running on Neo4j CE + Ollama. All Zep Cloud dependencies remove
 - [ ] Authentication & multi-user support
 - [ ] Graph versioning: snapshot and restore graph states
 - [ ] Plugin system for custom NER extractors, search strategies, and report templates
-- [ ] Comprehensive test suite (unit + integration + E2E)
+- [ ] Expand test suite: integration tests against real Neo4j + Ollama (currently all mocked)
+- [ ] E2E test: upload → build → simulate → report full pipeline
 - [ ] Performance benchmarks: document throughput (texts/min) and latency per hardware tier
 - [ ] Helm chart for Kubernetes deployment
+- [ ] Production deployment guide: CORS_ORIGINS, FLASK_DEBUG=false, SECRET_KEY rotation
 
 ### Beyond v1.0
 - [ ] Federation: connect multiple MegaFish instances to share entity knowledge
