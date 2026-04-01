@@ -1363,7 +1363,7 @@ class ReportAgent:
                 else:
                     # Third time: downgrade, truncate to first tool call, force execution
                     logger.warning(
-                        f"Section {section.title}: consecutive {conflict_retries} conflicts，"
+                        f"Section {section.title}: {conflict_retries} consecutive conflicts — "
                         "downgraded to truncate and execute first tool call"
                     )
                     first_tool_end = response.find('</tool_call>')
@@ -1391,7 +1391,7 @@ class ReportAgent:
                 if tool_calls_count < min_tool_calls:
                     messages.append({"role": "assistant", "content": response})
                     unused_tools = all_tools - used_tools
-                    unused_hint = f"(These tools have not been used, recommend using them: {', '.join(unused_tools)}）" if unused_tools else ""
+                    unused_hint = f"(These tools have not been used yet — consider using them: {', '.join(unused_tools)})" if unused_tools else ""
                     messages.append({
                         "role": "user",
                         "content": REACT_INSUFFICIENT_TOOLS_MSG.format(

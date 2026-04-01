@@ -289,7 +289,7 @@ Based on the above content, design entity types and relationship types suitable 
             if len(edge.get("description", "")) > 100:
                 edge["description"] = edge["description"][:97] + "..."
 
-        # Zep API limit: maximum 10 custom entity types, maximum 10 custom edge types
+        # Cap at 10 custom entity types and 10 custom edge types
         MAX_ENTITY_TYPES = 10
         MAX_EDGE_TYPES = 10
 

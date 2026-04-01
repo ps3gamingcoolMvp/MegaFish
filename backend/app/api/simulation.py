@@ -410,7 +410,7 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         logger.debug(f"Detect simulation preparation status: {simulation_id}, status={status}, config_generated={config_generated}")
         
         # If config_generated=True and files exist, consider preparation complete
-        # The following statuses indicate preparation is complete：
+        # The following statuses indicate preparation is complete:
         # - ready: Preparation complete, can run
         # - preparing: If config_generated=True, description shows completed
         # - running: Running, preparation already completed
@@ -546,7 +546,7 @@ def prepare_simulation():
                     "data": {
                         "simulation_id": simulation_id,
                         "status": "ready",
-                        "message": "Preparation already completed，No need to repeatGenerate",
+                        "message": "Preparation already completed. No need to regenerate.",
                         "already_prepared": True,
                         "prepare_info": prepare_info
                     }
@@ -599,7 +599,7 @@ def prepare_simulation():
             state.entity_types = list(filtered_preview.entity_types)
             logger.info(f"Expected entity count: {filtered_preview.filtered_count}, [type][model]: {filtered_preview.entity_types}")
         except Exception as e:
-            logger.warning(f"Synchronously get entity countFailed（Will retry in background task）: {e}")
+            logger.warning(f"Failed to get entity count synchronously (will retry in background task): {e}")
             # Failure does not affect subsequent process，Background task will retry
         
         # Create async task
@@ -730,7 +730,7 @@ def prepare_simulation():
                 "simulation_id": simulation_id,
                 "task_id": task_id,
                 "status": "preparing",
-                "message": "Preparation task started，Please via /api/simulation/prepare/status Query progress",
+                "message": "Preparation task started. Poll /api/simulation/prepare/status for progress.",
                 "already_prepared": False,
                 "expected_entities_count": state.entities_count,  # Expected number of entities to process
                 "entity_types": state.entity_types  # Entity type list
@@ -838,7 +838,7 @@ def get_prepare_status():
                             "task_id": task_id,
                             "status": "ready",
                             "progress": 100,
-                            "message": "Task complete（PrepareWork already exists）",
+                            "message": "Task complete (preparation already exists).",
                             "already_prepared": True,
                             "prepare_info": prepare_info
                         }
@@ -880,7 +880,7 @@ def get_simulation(simulation_id: str):
         
         result = state.to_dict()
         
-        # If simulation is ready，Additional runtime instructions
+        # If simulation is ready, include runtime instructions
         if state.status == SimulationStatus.READY:
             result["run_instructions"] = manager.get_run_instructions(simulation_id)
         
@@ -1459,7 +1459,7 @@ def download_simulation_script(script_name: str):
         if script_name not in allowed_scripts:
             return jsonify({
                 "success": False,
-                "error": f"Unknown script: {script_name}，Optional: {allowed_scripts}"
+                "error": f"Unknown script: {script_name}. Valid options: {allowed_scripts}"
             }), 400
         
         script_path = os.path.join(scripts_dir, script_name)
@@ -1638,7 +1638,7 @@ def start_simulation():
         if platform not in ['twitter', 'reddit', 'parallel']:
             return jsonify({
                 "success": False,
-                "error": f"Invalid platform type: {platform}，Optional: twitter/reddit/parallel"
+                "error": f"Invalid platform type: {platform}. Valid options: twitter/reddit/parallel"
             }), 400
 
         # Check if simulation is ready
@@ -1667,7 +1667,7 @@ def start_simulation():
                         # Process is indeed running
                         if force:
                             # Force mode：Stop runningSimulation
-                            logger.info(f"Force mode：Stop runningSimulation {simulation_id}")
+                            logger.info(f"Force mode: stopping running simulation {simulation_id}")
                             try:
                                 SimulationRunner.stop_simulation(simulation_id)
                             except Exception as e:
@@ -1711,7 +1711,7 @@ def start_simulation():
             if not graph_id:
                 return jsonify({
                     "success": False,
-                    "error": "Enable knowledge graph memory update requires valid graph_id，Please ensure project graph built"
+                    "error": "Enabling knowledge graph memory update requires a valid graph_id. Please ensure the project graph is built."
                 }), 400
             
             logger.info(f"Enable knowledge graph memory update: simulation_id={simulation_id}, graph_id={graph_id}")
@@ -2132,7 +2132,7 @@ def get_simulation_posts(simulation_id: str):
                     "platform": platform,
                     "count": 0,
                     "posts": [],
-                    "message": "Database does not exist，SimulationMay not have run yet"
+                    "message": "Database not found. The simulation may not have run yet."
                 }
             })
         
@@ -2330,7 +2330,7 @@ def interview_agent():
         if not prompt:
             return jsonify({
                 "success": False,
-                "error": "Please provide prompt（Interview question）"
+                "error": "Please provide a prompt (interview question)"
             }), 400
         
         # VerifyplatformParameters
@@ -2445,7 +2445,7 @@ def interview_agents_batch():
         if not interviews or not isinstance(interviews, list):
             return jsonify({
                 "success": False,
-                "error": "Please provide interviews（Interview list）"
+                "error": "Please provide an interviews list"
             }), 400
 
         # VerifyplatformParameters
@@ -2572,7 +2572,7 @@ def interview_all_agents():
         if not prompt:
             return jsonify({
                 "success": False,
-                "error": "Please provide prompt（Interview question）"
+                "error": "Please provide a prompt (interview question)"
             }), 400
 
         # VerifyplatformParameters

@@ -477,7 +477,7 @@ def build_graph():
                 # Create graph
                 task_manager.update_task(
                     task_id,
-                    message="Creating Zep graph...",
+                    message="Creating knowledge graph...",
                     progress=10
                 )
                 graph_id = builder.create_graph(name=graph_name)
