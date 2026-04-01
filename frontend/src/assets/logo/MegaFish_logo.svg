@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 320">
+  <defs>
+    <!-- Mirror interior gradient -->
+    <radialGradient id="mirrorBg" cx="45%" cy="42%" r="58%">
+      <stop offset="0%" stop-color="#d4eef8"/>
+      <stop offset="60%" stop-color="#a8d4e8"/>
+      <stop offset="100%" stop-color="#7ab8d0"/>
+    </radialGradient>
+    <!-- Frame gradient (metallic silver) -->
+    <radialGradient id="frameOuter" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#e8e8e8"/>
+      <stop offset="50%" stop-color="#c0c0c0"/>
+      <stop offset="100%" stop-color="#888"/>
+    </radialGradient>
+    <!-- Frame inner ring -->
+    <radialGradient id="frameInner" cx="40%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="#d8d8d8"/>
+      <stop offset="100%" stop-color="#999"/>
+    </radialGradient>
+    <!-- Red fish body gradient -->
+    <radialGradient id="fishBody" cx="45%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#ff5533"/>
+      <stop offset="60%" stop-color="#dd2200"/>
+      <stop offset="100%" stop-color="#aa1500"/>
+    </radialGradient>
+    <!-- Red fins gradient -->
+    <linearGradient id="finGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6644"/>
+      <stop offset="100%" stop-color="#990d00"/>
+    </linearGradient>
+    <!-- Glass reflection -->
+    <linearGradient id="glassSheen" x1="15%" y1="0%" x2="60%" y2="100%">
+      <stop offset="0%" stop-color="white" stop-opacity="0.35"/>
+      <stop offset="40%" stop-color="white" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0.0"/>
+    </linearGradient>
+    <!-- Clip to circle -->
+    <clipPath id="mirrorClip">
+      <circle cx="210" cy="155" r="125"/>
+    </clipPath>
+    <!-- Water shimmer -->
+    <linearGradient id="waterLine" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#5599bb" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#5599bb" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#5599bb" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ── Mirror Frame ── -->
+  <circle cx="210" cy="155" r="145" fill="url(#frameOuter)"/>
+  <circle cx="210" cy="155" r="137" fill="url(#frameInner)"/>
+  <circle cx="210" cy="155" r="125" fill="url(#mirrorBg)"/>
+
+  <!-- ── Everything inside the mirror ── -->
+  <g clip-path="url(#mirrorClip)">
+
+    <!-- Water surface ripple at bottom -->
+    <ellipse cx="210" cy="255" rx="120" ry="18" fill="url(#waterLine)" opacity="0.6"/>
+    <ellipse cx="210" cy="265" rx="100" ry="12" fill="url(#waterLine)" opacity="0.35"/>
+
+    <!-- ── School of small background fish (right side) ── -->
+    <g fill="#3a7a9a" opacity="0.55">
+      <!-- each fish: body ellipse + tiny tail -->
+      <g transform="translate(295,105) rotate(-5)"><ellipse rx="13" ry="6"/><polygon points="-13,0 -20,-6 -20,6" /></g>
+      <g transform="translate(318,88) rotate(5)"><ellipse rx="11" ry="5"/><polygon points="-11,0 -17,-5 -17,5" /></g>
+      <g transform="translate(305,125) rotate(-8)"><ellipse rx="10" ry="4.5"/><polygon points="-10,0 -16,-4 -16,4" /></g>
+      <g transform="translate(330,110) rotate(3)"><ellipse rx="12" ry="5.5"/><polygon points="-12,0 -18,-5 -18,5" /></g>
+      <g transform="translate(290,145) rotate(-10)"><ellipse rx="11" ry="5"/><polygon points="-11,0 -17,-4.5 -17,4.5" /></g>
+      <g transform="translate(320,150) rotate(6)"><ellipse rx="10" ry="4.5"/><polygon points="-10,0 -15,-4 -15,4" /></g>
+      <g transform="translate(310,168) rotate(-4)"><ellipse rx="9" ry="4"/><polygon points="-9,0 -14,-3.5 -14,3.5" /></g>
+      <g transform="translate(295,80) rotate(8)"><ellipse rx="8" ry="3.5"/><polygon points="-8,0 -13,-3 -13,3" /></g>
+    </g>
+
+    <!-- ── Red Betta Fish (facing right, inside mirror) ── -->
+    <!-- Long flowing tail (left side, multiple layers) -->
+    <path d="M 148,175 Q 90,225 100,275 Q 115,235 128,210 Q 138,193 148,182 Z" fill="url(#finGrad)" opacity="0.9"/>
+    <path d="M 148,168 Q 82,195 88,250 Q 108,210 130,195 Q 141,185 148,175 Z" fill="url(#finGrad)" opacity="0.85"/>
+    <path d="M 148,158 Q 80,160 90,205 Q 115,175 138,168 Q 144,165 148,162 Z" fill="url(#finGrad)" opacity="0.8"/>
+    <path d="M 148,152 Q 85,135 95,170 Q 120,155 142,155 Q 146,154 148,155 Z" fill="url(#finGrad)" opacity="0.75"/>
+    <path d="M 148,145 Q 88,115 100,145 Q 120,138 142,145 Z" fill="url(#finGrad)" opacity="0.7"/>
+
+    <!-- Ventral fin (bottom) -->
+    <path d="M 185,197 Q 170,228 182,245 Q 195,225 195,208 Z" fill="#cc1a00" opacity="0.88"/>
+
+    <!-- Anal fin (bottom, longer) -->
+    <path d="M 205,198 Q 195,235 205,250 Q 218,230 215,210 Z" fill="#bb1500" opacity="0.82"/>
+
+    <!-- Main body -->
+    <ellipse cx="215" cy="170" rx="60" ry="32" fill="url(#fishBody)"/>
+
+    <!-- Dorsal fin (top) -->
+    <path d="M 195,140 Q 210,105 235,112 Q 255,118 260,138 L 248,140 Q 240,128 220,125 Q 205,125 200,140 Z" fill="#cc1a00" opacity="0.92"/>
+
+    <!-- Head -->
+    <ellipse cx="263" cy="168" rx="28" ry="24" fill="url(#fishBody)"/>
+
+    <!-- Mouth -->
+    <path d="M 287,171 Q 293,168 290,174" stroke="#881000" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+    <!-- Pectoral fin -->
+    <path d="M 240,178 Q 232,205 248,210 Q 255,192 246,181 Z" fill="#ff5533" opacity="0.75"/>
+
+    <!-- Eye -->
+    <circle cx="273" cy="162" r="9" fill="#1a0a00"/>
+    <circle cx="276" cy="159" r="3.5" fill="white" opacity="0.65"/>
+    <circle cx="271" cy="164" r="1.5" fill="#ff3300" opacity="0.4"/>
+
+    <!-- Body shimmer highlight -->
+    <ellipse cx="225" cy="158" rx="28" ry="10" fill="white" opacity="0.12" transform="rotate(-15,225,158)"/>
+
+    <!-- Glass sheen overlay (on top of fish too) -->
+    <ellipse cx="175" cy="90" rx="70" ry="35" fill="white" opacity="0.18" transform="rotate(-25,175,90)"/>
+  </g>
+
+  <!-- Glass reflection (over the whole mirror) -->
+  <circle cx="210" cy="155" r="125" fill="url(#glassSheen)"/>
+
+  <!-- Frame highlight -->
+  <ellipse cx="168" cy="105" rx="38" ry="14" fill="white" opacity="0.22" transform="rotate(-35,168,105)"/>
+</svg>

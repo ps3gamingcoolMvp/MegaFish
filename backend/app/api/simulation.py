@@ -4,6 +4,7 @@ Step2: Entity reading and filtering, OASIS simulation preparation and execution 
 """
 
 import os
+import threading
 import traceback
 from flask import request, jsonify, send_file, current_app
 
@@ -13,10 +14,128 @@ from ..services.entity_reader import EntityReader
 from ..services.oasis_profile_generator import OasisProfileGenerator
 from ..services.simulation_manager import SimulationManager, SimulationStatus
 from ..services.simulation_runner import SimulationRunner, RunnerStatus
+from ..services.population_simulation_engine import PopulationSimulationEngine
+from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
 from ..models.project import ProjectManager
 
-logger = get_logger('mirofish.api.simulation')
+logger = get_logger('megafish.api.simulation')
+
+# ---------------------------------------------------------------------------
+# World Simulation — in-memory result store (keyed by sim_id)
+# ---------------------------------------------------------------------------
+_world_sim_results: dict = {}
+_world_sim_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# World Simulation endpoints
+# ---------------------------------------------------------------------------
+
+@simulation_bp.route('/world', methods=['POST'])
+def start_world_simulation():
+    """
+    Launch a full 8.3B population world simulation.
+
+    Body JSON:
+      scenario    (str, required) — what you want to simulate
+      date        (str, optional) — simulation date, e.g. "2026-03-30" (default: today)
+      time_steps  (int, optional) — how many future steps to project (default: 3)
+      step_unit   (str, optional) — "hours"|"days"|"weeks"|"months" (default: "days")
+      max_cohorts (int, optional) — max demographic cohorts to use (default: 300)
+    """
+    try:
+        body = request.get_json(force=True) or {}
+        scenario = body.get("scenario", "").strip()
+        if not scenario:
+            return jsonify({"success": False, "error": "scenario is required"}), 400
+
+        sim_date   = body.get("date")
+        time_steps = int(body.get("time_steps", 3))
+        step_unit  = body.get("step_unit", "days")
+        max_cohorts = int(body.get("max_cohorts", 300))
+
+        import time, uuid
+        sim_id = f"world_{uuid.uuid4().hex[:10]}"
+
+        # Initialise the result slot so callers can poll immediately
+        with _world_sim_lock:
+            _world_sim_results[sim_id] = {
+                "status": "running",
+                "progress": 0,
+                "message": "Starting world simulation…",
+                "result": None,
+                "error": None,
+            }
+
+        def run_in_background():
+            try:
+                llm = LLMClient()
+                engine = PopulationSimulationEngine(llm)
+
+                def on_progress(current, total, message):
+                    with _world_sim_lock:
+                        if sim_id in _world_sim_results:
+                            _world_sim_results[sim_id]["progress"] = int(current / total * 100)
+                            _world_sim_results[sim_id]["message"] = message
+
+                result = engine.run(
+                    scenario=scenario,
+                    simulation_id=sim_id,
+                    simulation_date=sim_date,
+                    time_steps=time_steps,
+                    time_step_unit=step_unit,
+                    max_cohorts=max_cohorts,
+                    on_progress=on_progress,
+                )
+
+                with _world_sim_lock:
+                    _world_sim_results[sim_id]["status"]   = "completed"
+                    _world_sim_results[sim_id]["progress"] = 100
+                    _world_sim_results[sim_id]["message"]  = "Simulation complete"
+                    _world_sim_results[sim_id]["result"]   = result.to_dict()
+
+                logger.info(f"[{sim_id}] World simulation complete")
+
+            except Exception as e:
+                logger.error(f"[{sim_id}] World simulation failed: {e}\n{traceback.format_exc()}")
+                with _world_sim_lock:
+                    _world_sim_results[sim_id]["status"] = "failed"
+                    _world_sim_results[sim_id]["error"]  = str(e)
+
+        thread = threading.Thread(target=run_in_background, daemon=True)
+        thread.start()
+
+        return jsonify({
+            "success": True,
+            "simulation_id": sim_id,
+            "message": "World simulation started",
+            "poll_url": f"/api/simulation/world/{sim_id}",
+        })
+
+    except Exception as e:
+        logger.error(f"Failed to start world simulation: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@simulation_bp.route('/world/<sim_id>', methods=['GET'])
+def get_world_simulation(sim_id: str):
+    """Poll the status and result of a running world simulation."""
+    with _world_sim_lock:
+        data = _world_sim_results.get(sim_id)
+
+    if data is None:
+        return jsonify({"success": False, "error": "Simulation not found"}), 404
+
+    return jsonify({
+        "success": True,
+        "simulation_id": sim_id,
+        "status":   data["status"],
+        "progress": data["progress"],
+        "message":  data["message"],
+        "result":   data["result"],
+        "error":    data["error"],
+    })
 
 
 # Interview prompt optimization prefix
@@ -162,7 +281,7 @@ def create_simulation():
     Request (JSON):
         {
             "project_id": "proj_xxxx",      // Required
-            "graph_id": "mirofish_xxxx",    // Optional, if not provided, get from project
+            "graph_id": "megafish_xxxx",    // Optional, if not provided, get from project
             "enable_twitter": true,          // Optional, default true
             "enable_reddit": true            // Optional, default true
         }
@@ -173,7 +292,7 @@ def create_simulation():
             "data": {
                 "simulation_id": "sim_xxxx",
                 "project_id": "proj_xxxx",
-                "graph_id": "mirofish_xxxx",
+                "graph_id": "megafish_xxxx",
                 "status": "created",
                 "enable_twitter": true,
                 "enable_reddit": true,
@@ -457,6 +576,7 @@ def prepare_simulation():
         entity_types_list = data.get('entity_types')
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
         parallel_profile_count = data.get('parallel_profile_count', 5)
+        world_context = data.get('world_context')  # Optional population simulation result
         
         # ========== Get GraphStorage（Capture reference before background task starts） ==========
         storage = current_app.extensions.get('neo4j_storage')
@@ -580,6 +700,7 @@ def prepare_simulation():
                     progress_callback=progress_callback,
                     parallel_profile_count=parallel_profile_count,
                     storage=storage,
+                    world_context=world_context,
                 )
                 
                 # Task complete
@@ -1373,7 +1494,7 @@ def generate_profiles():
     
     Request (JSON):
         {
-            "graph_id": "mirofish_xxxx",     // Required
+            "graph_id": "megafish_xxxx",     // Required
             "entity_types": ["Student"],      // Optional
             "use_llm": true,                  // Optional
             "platform": "reddit"              // Optional

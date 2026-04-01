@@ -23,10 +23,13 @@ from ..utils.logger import get_logger
 from .graph_memory_updater import GraphMemoryManager
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
 
-logger = get_logger('mirofish.simulation_runner')
+logger = get_logger('megafish.simulation_runner')
 
 # Flag whether cleanup function is registered
 _cleanup_registered = False
+
+# Lock for thread-safe access to SimulationRunner._run_states
+_run_states_lock = threading.Lock()
 
 # Platform detection
 IS_WINDOWS = sys.platform == 'win32'
@@ -229,13 +232,15 @@ class SimulationRunner:
     @classmethod
     def get_run_state(cls, simulation_id: str) -> Optional[SimulationRunState]:
         """Get run state"""
-        if simulation_id in cls._run_states:
-            return cls._run_states[simulation_id]
-        
-        # Try to load from file
+        with _run_states_lock:
+            if simulation_id in cls._run_states:
+                return cls._run_states[simulation_id]
+
+        # Try to load from file (outside lock to avoid holding lock during I/O)
         state = cls._load_run_state(simulation_id)
         if state:
-            cls._run_states[simulation_id] = state
+            with _run_states_lock:
+                cls._run_states[simulation_id] = state
         return state
     
     @classmethod
@@ -306,8 +311,9 @@ class SimulationRunner:
         with open(state_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
-        cls._run_states[state.simulation_id] = state
-    
+        with _run_states_lock:
+            cls._run_states[state.simulation_id] = state
+
     @classmethod
     def start_simulation(
         cls,
@@ -757,19 +763,32 @@ class SimulationRunner:
         else:
             # Unix: Use process group termination
             # Since start_new_session=True, process group ID equals main process PID
-            pgid = os.getpgid(process.pid)
+            try:
+                pgid = os.getpgid(process.pid)
+            except (ProcessLookupError, OSError):
+                logger.warning(f"Process already gone before getpgid: simulation={simulation_id}")
+                return
             logger.info(f"Terminate process group (Unix): simulation={simulation_id}, pgid={pgid}")
-            
+
             # First send SIGTERM to the entire process group
-            os.killpg(pgid, signal.SIGTERM)
-            
+            try:
+                os.killpg(pgid, signal.SIGTERM)
+            except (ProcessLookupError, OSError) as e:
+                logger.warning(f"killpg SIGTERM failed (process may have already exited): {e}")
+
             try:
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 # If still not ended after timeout, force send SIGKILL
                 logger.warning(f"Process group not responding to SIGTERM, force terminating: {simulation_id}")
-                os.killpg(pgid, signal.SIGKILL)
-                process.wait(timeout=5)
+                try:
+                    os.killpg(pgid, signal.SIGKILL)
+                except (ProcessLookupError, OSError) as e:
+                    logger.warning(f"killpg SIGKILL failed (process may have already exited): {e}")
+                try:
+                    process.wait(timeout=5)
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
     
     @classmethod
     def stop_simulation(cls, simulation_id: str) -> SimulationRunState:
@@ -1167,8 +1186,9 @@ class SimulationRunner:
                         errors.append(f"Failed to delete {dir_name}/actions.jsonl: {str(e)}")
         
         # Clean up in-memory run state
-        if simulation_id in cls._run_states:
-            del cls._run_states[simulation_id]
+        with _run_states_lock:
+            if simulation_id in cls._run_states:
+                del cls._run_states[simulation_id]
         
         logger.info(f"Cleanup simulation logs completed: {simulation_id}, deleted files: {cleaned_files}")
         

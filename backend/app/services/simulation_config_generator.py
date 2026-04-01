@@ -22,7 +22,7 @@ from ..config import Config
 from ..utils.logger import get_logger
 from .entity_reader import EntityNode
 
-logger = get_logger('mirofish.simulation_config')
+logger = get_logger('megafish.simulation_config')
 
 # Time zone configuration for Chinese work schedules (Beijing Time)
 CHINA_TIMEZONE_CONFIG = {

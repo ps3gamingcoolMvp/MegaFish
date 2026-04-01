@@ -19,7 +19,7 @@ from ..models.task import TaskManager, TaskStatus
 from ..models.project import ProjectManager, ProjectStatus
 
 # Get logger
-logger = get_logger('mirofish.api')
+logger = get_logger('megafish.api')
 
 
 def _get_storage():
@@ -124,103 +124,16 @@ def reset_project(project_id: str):
     })
 
 
-# ============== Interface 1: Upload Files and Generate Ontology ==============
+# ============== Interface 1: Upload Files and Generate Ontology (async) ==============
 
-@graph_bp.route('/ontology/generate', methods=['POST'])
-def generate_ontology():
-    """
-    Interface 1: Upload files and analyze to generate ontology definition
-
-    Request method: multipart/form-data
-
-    Parameters:
-        files: Uploaded files (PDF/MD/TXT), multiple allowed
-        simulation_requirement: Simulation requirement description (required)
-        project_name: Project name (optional)
-        additional_context: Additional notes (optional)
-
-    Response:
-        {
-            "success": true,
-            "data": {
-                "project_id": "proj_xxxx",
-                "ontology": {
-                    "entity_types": [...],
-                    "edge_types": [...],
-                    "analysis_summary": "..."
-                },
-                "files": [...],
-                "total_text_length": 12345
-            }
-        }
-    """
+def _run_ontology_task(task_id: str, project_id: str, document_texts: list,
+                       simulation_requirement: str, additional_context: str):
+    """Background worker: runs LLM ontology generation and updates task + project."""
+    tm = TaskManager()
     try:
-        logger.info("=== Starting ontology generation ===")
+        tm.update_task(task_id, status=TaskStatus.PROCESSING,
+                       message="LLM analyzing documents...", progress=10)
 
-        # Get parameters
-        simulation_requirement = request.form.get('simulation_requirement', '')
-        project_name = request.form.get('project_name', 'Unnamed Project')
-        additional_context = request.form.get('additional_context', '')
-
-        logger.debug(f"Project name: {project_name}")
-        logger.debug(f"Simulation requirement: {simulation_requirement[:100]}...")
-
-        if not simulation_requirement:
-            return jsonify({
-                "success": False,
-                "error": "Please provide simulation requirement description (simulation_requirement)"
-            }), 400
-
-        # Get uploaded files
-        uploaded_files = request.files.getlist('files')
-        if not uploaded_files or all(not f.filename for f in uploaded_files):
-            return jsonify({
-                "success": False,
-                "error": "Please upload at least one document file"
-            }), 400
-
-        # Create project
-        project = ProjectManager.create_project(name=project_name)
-        project.simulation_requirement = simulation_requirement
-        logger.info(f"Project created: {project.project_id}")
-        
-        # Save files and extract text
-        document_texts = []
-        all_text = ""
-
-        for file in uploaded_files:
-            if file and file.filename and allowed_file(file.filename):
-                # Save file to project directory
-                file_info = ProjectManager.save_file_to_project(
-                    project.project_id,
-                    file,
-                    file.filename
-                )
-                project.files.append({
-                    "filename": file_info["original_filename"],
-                    "size": file_info["size"]
-                })
-
-                # Extract text
-                text = FileParser.extract_text(file_info["path"])
-                text = TextProcessor.preprocess_text(text)
-                document_texts.append(text)
-                all_text += f"\n\n=== {file_info['original_filename']} ===\n{text}"
-
-        if not document_texts:
-            ProjectManager.delete_project(project.project_id)
-            return jsonify({
-                "success": False,
-                "error": "No documents successfully processed. Please check file format"
-            }), 400
-
-        # Save extracted text
-        project.total_text_length = len(all_text)
-        ProjectManager.save_extracted_text(project.project_id, all_text)
-        logger.info(f"Text extraction completed, total {len(all_text)} characters")
-
-        # Generate ontology
-        logger.info("Calling LLM to generate ontology definition...")
         generator = OntologyGenerator()
         ontology = generator.generate(
             document_texts=document_texts,
@@ -228,38 +141,194 @@ def generate_ontology():
             additional_context=additional_context if additional_context else None
         )
 
-        # Save ontology to project
+        project = ProjectManager.get_project(project_id)
+        if project:
+            project.ontology = {
+                "entity_types": ontology.get("entity_types", []),
+                "edge_types": ontology.get("edge_types", [])
+            }
+            project.analysis_summary = ontology.get("analysis_summary", "")
+            project.status = ProjectStatus.ONTOLOGY_GENERATED
+            ProjectManager.save_project(project)
+
         entity_count = len(ontology.get("entity_types", []))
         edge_count = len(ontology.get("edge_types", []))
-        logger.info(f"Ontology generation completed: {entity_count} entity types, {edge_count} relation types")
-        
-        project.ontology = {
-            "entity_types": ontology.get("entity_types", []),
-            "edge_types": ontology.get("edge_types", [])
-        }
-        project.analysis_summary = ontology.get("analysis_summary", "")
-        project.status = ProjectStatus.ONTOLOGY_GENERATED
+        logger.info(f"Ontology complete: {entity_count} entities, {edge_count} relations")
+
+        tm.update_task(task_id, status=TaskStatus.COMPLETED,
+                       message=f"Ontology ready: {entity_count} entity types, {edge_count} relation types",
+                       progress=100,
+                       result={
+                           "project_id": project_id,
+                           "ontology": project.ontology if project else {},
+                           "analysis_summary": ontology.get("analysis_summary", ""),
+                           "entity_count": entity_count,
+                           "edge_count": edge_count,
+                       })
+    except Exception as e:
+        logger.error(f"Ontology task {task_id} failed: {e}")
+        tm.update_task(task_id, status=TaskStatus.FAILED,
+                       message=f"Ontology generation failed: {str(e)}", progress=0)
+        project = ProjectManager.get_project(project_id)
+        if project:
+            project.status = ProjectStatus.FAILED
+            project.error = str(e)
+            ProjectManager.save_project(project)
+
+
+@graph_bp.route('/ontology/generate', methods=['POST'])
+def generate_ontology():
+    """
+    Interface 1: Upload files, extract text, and start async ontology generation.
+
+    Returns immediately with project_id + task_id.
+    Poll GET /api/graph/task/<task_id> for status.
+    When task status == 'completed', result contains the ontology.
+    """
+    try:
+        logger.info("=== Starting ontology generation (async) ===")
+
+        simulation_requirement = request.form.get('simulation_requirement', '')
+        project_name = request.form.get('project_name', 'Unnamed Project')
+        additional_context = request.form.get('additional_context', '')
+
+        if not simulation_requirement:
+            return jsonify({"success": False,
+                            "error": "Please provide simulation_requirement"}), 400
+
+        uploaded_files = request.files.getlist('files')
+        if not uploaded_files or all(not f.filename for f in uploaded_files):
+            return jsonify({"success": False,
+                            "error": "Please upload at least one document file"}), 400
+
+        # Create project & save files (fast — no LLM yet)
+        project = ProjectManager.create_project(name=project_name)
+        project.simulation_requirement = simulation_requirement
+        logger.info(f"Project created: {project.project_id}")
+
+        document_texts = []
+        all_text = ""
+        for file in uploaded_files:
+            if file and file.filename and allowed_file(file.filename):
+                file_info = ProjectManager.save_file_to_project(
+                    project.project_id, file, file.filename)
+                project.files.append({
+                    "filename": file_info["original_filename"],
+                    "size": file_info["size"]
+                })
+                text = FileParser.extract_text(file_info["path"])
+                text = TextProcessor.preprocess_text(text)
+                document_texts.append(text)
+                all_text += f"\n\n=== {file_info['original_filename']} ===\n{text}"
+
+        if not document_texts:
+            ProjectManager.delete_project(project.project_id)
+            return jsonify({"success": False,
+                            "error": "No documents successfully processed"}), 400
+
+        project.total_text_length = len(all_text)
+        ProjectManager.save_extracted_text(project.project_id, all_text)
         ProjectManager.save_project(project)
-        logger.info(f"=== Ontology generation completed === Project ID: {project.project_id}")
-        
+        logger.info(f"Files saved & text extracted ({len(all_text)} chars). Starting async LLM task.")
+
+        # Create task and launch background thread
+        tm = TaskManager()
+        task_id = tm.create_task(
+            task_type="ontology_generation",
+            metadata={"project_id": project.project_id, "message": "Starting ontology generation..."}
+        )
+        thread = threading.Thread(
+            target=_run_ontology_task,
+            args=(task_id, project.project_id, document_texts,
+                  simulation_requirement, additional_context),
+            daemon=True
+        )
+        thread.start()
+
         return jsonify({
             "success": True,
             "data": {
                 "project_id": project.project_id,
-                "project_name": project.name,
-                "ontology": project.ontology,
-                "analysis_summary": project.analysis_summary,
+                "task_id": task_id,
+                "status": "processing",
                 "files": project.files,
-                "total_text_length": project.total_text_length
+                "total_text_length": project.total_text_length,
+                "message": "Ontology generation started. Poll /api/graph/task/<task_id> for status."
             }
         })
-        
+
     except Exception as e:
+        return jsonify({"success": False, "error": str(e),
+                        "traceback": traceback.format_exc()}), 500
+
+
+@graph_bp.route('/ontology/retry/<project_id>', methods=['POST'])
+def retry_ontology(project_id: str):
+    """
+    Retry ontology generation for a project that already has files uploaded.
+    Use this when a project is stuck in 'created' status after a timeout.
+    Reads already-extracted text — no re-upload needed.
+    """
+    try:
+        project = ProjectManager.get_project(project_id)
+        if not project:
+            return jsonify({"success": False, "error": f"Project not found: {project_id}"}), 404
+
+        # Load already-extracted text
+        text_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', 'uploads', 'projects',
+            project_id, 'extracted_text.txt'
+        )
+        text_path = os.path.normpath(text_path)
+
+        if not os.path.exists(text_path):
+            return jsonify({"success": False,
+                            "error": "No extracted text found. Please re-upload files."}), 400
+
+        with open(text_path, 'r', encoding='utf-8') as f:
+            all_text = f.read()
+
+        # Split back into per-document chunks (simple split on separator)
+        parts = all_text.split('\n\n=== ')
+        document_texts = [p.split(' ===\n', 1)[-1].strip() for p in parts if p.strip()]
+
+        if not document_texts:
+            return jsonify({"success": False, "error": "Extracted text is empty"}), 400
+
+        simulation_requirement = project.simulation_requirement or request.json.get('simulation_requirement', '')
+        if not simulation_requirement:
+            return jsonify({"success": False, "error": "simulation_requirement missing"}), 400
+
+        additional_context = request.json.get('additional_context', '') if request.is_json else ''
+
+        logger.info(f"Retrying ontology for project {project_id} ({len(document_texts)} docs, {len(all_text)} chars)")
+
+        tm = TaskManager()
+        task_id = tm.create_task(
+            task_type="ontology_generation",
+            metadata={"project_id": project.project_id, "message": "Retrying ontology generation..."}
+        )
+        thread = threading.Thread(
+            target=_run_ontology_task,
+            args=(task_id, project.project_id, document_texts,
+                  simulation_requirement, additional_context),
+            daemon=True
+        )
+        thread.start()
+
         return jsonify({
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
+            "success": True,
+            "data": {
+                "project_id": project_id,
+                "task_id": task_id,
+                "status": "processing",
+                "message": "Ontology retry started. Poll /api/graph/task/<task_id> for status."
+            }
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e),
+                        "traceback": traceback.format_exc()}), 500
 
 
 # ============== Interface 2: Build Graph ==============
@@ -333,7 +402,7 @@ def build_graph():
             project.error = None
 
         # Get configuration
-        graph_name = data.get('graph_name', project.name or 'MiroFish Graph')
+        graph_name = data.get('graph_name', project.name or 'MegaFish Graph')
         chunk_size = data.get('chunk_size', project.chunk_size or Config.DEFAULT_CHUNK_SIZE)
         chunk_overlap = data.get('chunk_overlap', project.chunk_overlap or Config.DEFAULT_CHUNK_OVERLAP)
 
@@ -372,7 +441,15 @@ def build_graph():
 
         # Start background task
         def build_task():
-            build_logger = get_logger('mirofish.build')
+            build_logger = get_logger('megafish.build')
+            # Reconnect storage if the connection dropped between the request context and this thread
+            try:
+                if hasattr(storage, 'ensure_connected'):
+                    storage.ensure_connected()
+                elif hasattr(storage, 'reconnect'):
+                    storage.reconnect()
+            except Exception as _conn_err:
+                build_logger.warning(f"[{task_id}] Storage pre-connect check failed (continuing): {_conn_err}")
             try:
                 build_logger.info(f"[{task_id}] Starting graph build...")
                 task_manager.update_task(

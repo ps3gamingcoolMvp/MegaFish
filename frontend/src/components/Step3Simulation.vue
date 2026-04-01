@@ -633,7 +633,9 @@ const formatActionTime = (timestamp) => {
   if (!timestamp) return ''
   try {
     return new Date(timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  } catch {
+  } catch (err) {
+    console.error('formatActionTime error:', err)
+    addLog(`Time format error: ${err.message}`)
     return ''
   }
 }

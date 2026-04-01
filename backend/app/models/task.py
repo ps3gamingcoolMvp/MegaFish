@@ -1,22 +1,31 @@
 """
 Task Status Management
-Tracks long-running tasks (like graph building)
+Tracks long-running tasks (like graph building) with disk persistence.
+Tasks survive backend restarts — stored in uploads/tasks.json.
 """
 
-import uuid
+import json
+import logging
+import os
 import threading
+import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+# Persist tasks next to the uploads folder so they survive restarts
+_TASKS_FILE = os.path.join(os.path.dirname(__file__), "../../uploads/tasks.json")
 
 
 class TaskStatus(str, Enum):
     """Task status enumeration"""
-    PENDING = "pending"          # Pending
-    PROCESSING = "processing"    # Processing
-    COMPLETED = "completed"      # Completed
-    FAILED = "failed"            # Failed
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 @dataclass
@@ -27,15 +36,14 @@ class Task:
     status: TaskStatus
     created_at: datetime
     updated_at: datetime
-    progress: int = 0              # Overall progress percentage 0-100
-    message: str = ""              # Status message
-    result: Optional[Dict] = None  # Task result
-    error: Optional[str] = None    # Error message
-    metadata: Dict = field(default_factory=dict)  # Additional metadata
-    progress_detail: Dict = field(default_factory=dict)  # Detailed progress information
+    progress: int = 0
+    message: str = ""
+    result: Optional[Dict] = None
+    error: Optional[str] = None
+    metadata: Dict = field(default_factory=dict)
+    progress_detail: Dict = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary"""
         return {
             "task_id": self.task_id,
             "task_type": self.task_type,
@@ -50,56 +58,99 @@ class Task:
             "metadata": self.metadata,
         }
 
+    @classmethod
+    def from_dict(cls, d: Dict) -> "Task":
+        return cls(
+            task_id=d["task_id"],
+            task_type=d["task_type"],
+            status=TaskStatus(d["status"]),
+            created_at=datetime.fromisoformat(d["created_at"]),
+            updated_at=datetime.fromisoformat(d["updated_at"]),
+            progress=d.get("progress", 0),
+            message=d.get("message", ""),
+            result=d.get("result"),
+            error=d.get("error"),
+            metadata=d.get("metadata", {}),
+            progress_detail=d.get("progress_detail", {}),
+        )
+
 
 class TaskManager:
     """
-    Task Manager
-    Thread-safe task status management
+    Thread-safe task manager with disk persistence.
+    Tasks are saved to uploads/tasks.json on every write so they survive
+    backend restarts (important for long LLM calls that can take 30+ minutes).
     """
 
     _instance = None
     _lock = threading.Lock()
 
     def __new__(cls):
-        """Singleton pattern"""
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
                     cls._instance._tasks: Dict[str, Task] = {}
                     cls._instance._task_lock = threading.Lock()
+                    cls._instance._load_from_disk()
         return cls._instance
 
+    # ------------------------------------------------------------------
+    # Disk persistence
+    # ------------------------------------------------------------------
+
+    def _load_from_disk(self):
+        """Load persisted tasks from disk on startup."""
+        path = os.path.abspath(_TASKS_FILE)
+        if not os.path.exists(path):
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for d in data.values():
+                try:
+                    task = Task.from_dict(d)
+                    self._tasks[task.task_id] = task
+                except Exception as e:
+                    logger.warning(f"Skipping corrupt task record: {e}")
+            logger.info(f"TaskManager: loaded {len(self._tasks)} tasks from disk")
+        except Exception as e:
+            logger.warning(f"TaskManager: could not load tasks from disk: {e}")
+
+    def _save_to_disk(self):
+        """Write all tasks to disk. Called inside _task_lock."""
+        path = os.path.abspath(_TASKS_FILE)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            data = {tid: task.to_dict() for tid, task in self._tasks.items()}
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp, path)  # atomic on POSIX
+        except Exception as e:
+            logger.warning(f"TaskManager: could not save tasks to disk: {e}")
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     def create_task(self, task_type: str, metadata: Optional[Dict] = None) -> str:
-        """
-        Create new task
-
-        Args:
-            task_type: Task type
-            metadata: Additional metadata
-
-        Returns:
-            Task ID
-        """
         task_id = str(uuid.uuid4())
         now = datetime.now()
-
         task = Task(
             task_id=task_id,
             task_type=task_type,
             status=TaskStatus.PENDING,
             created_at=now,
             updated_at=now,
-            metadata=metadata or {}
+            metadata=metadata or {},
         )
-
         with self._task_lock:
             self._tasks[task_id] = task
-
+            self._save_to_disk()
         return task_id
 
     def get_task(self, task_id: str) -> Optional[Task]:
-        """Get task"""
         with self._task_lock:
             return self._tasks.get(task_id)
 
@@ -111,20 +162,8 @@ class TaskManager:
         message: Optional[str] = None,
         result: Optional[Dict] = None,
         error: Optional[str] = None,
-        progress_detail: Optional[Dict] = None
+        progress_detail: Optional[Dict] = None,
     ):
-        """
-        Update task status
-
-        Args:
-            task_id: Task ID
-            status: New status
-            progress: Progress
-            message: Message
-            result: Result
-            error: Error message
-            progress_detail: Detailed progress information
-        """
         with self._task_lock:
             task = self._tasks.get(task_id)
             if task:
@@ -141,28 +180,26 @@ class TaskManager:
                     task.error = error
                 if progress_detail is not None:
                     task.progress_detail = progress_detail
+                self._save_to_disk()
 
     def complete_task(self, task_id: str, result: Dict):
-        """Mark task as completed"""
         self.update_task(
             task_id,
             status=TaskStatus.COMPLETED,
             progress=100,
             message="Task completed",
-            result=result
+            result=result,
         )
 
     def fail_task(self, task_id: str, error: str):
-        """Mark task as failed"""
         self.update_task(
             task_id,
             status=TaskStatus.FAILED,
             message="Task failed",
-            error=error
+            error=error,
         )
 
     def list_tasks(self, task_type: Optional[str] = None) -> list:
-        """List tasks"""
         with self._task_lock:
             tasks = list(self._tasks.values())
             if task_type:
@@ -170,15 +207,16 @@ class TaskManager:
             return [t.to_dict() for t in sorted(tasks, key=lambda x: x.created_at, reverse=True)]
 
     def cleanup_old_tasks(self, max_age_hours: int = 24):
-        """Clean up old tasks"""
+        """Remove completed/failed tasks older than max_age_hours."""
         from datetime import timedelta
         cutoff = datetime.now() - timedelta(hours=max_age_hours)
-
         with self._task_lock:
             old_ids = [
                 tid for tid, task in self._tasks.items()
-                if task.created_at < cutoff and task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED]
+                if task.created_at < cutoff
+                and task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED]
             ]
             for tid in old_ids:
                 del self._tasks[tid]
-
+            if old_ids:
+                self._save_to_disk()

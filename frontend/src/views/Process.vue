@@ -2,7 +2,7 @@
   <div class="process-page">
     <!-- Top navigation bar -->
     <nav class="navbar">
-      <div class="nav-brand" @click="goHome">MIROFISH OFFLINE</div>
+      <div class="nav-brand" @click="goHome">MEGAFISH OFFLINE</div>
       
       <!-- Center step indicator -->
       <div class="nav-center">
@@ -414,7 +414,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
+import { generateOntology, retryOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
 import * as d3 from 'd3'
 
@@ -564,7 +564,37 @@ const initProject = async () => {
   }
 }
 
-// Handle new project - call ontology/generate API
+// Poll an ontology task until completed or failed, then proceed
+const pollOntologyTask = async (taskId, projectId) => {
+  return new Promise((resolve, reject) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await getTaskStatus(taskId)
+        const task = res.data || res
+        const status = task.status
+        const message = task.message || 'Analyzing documents...'
+        const progress = task.progress || 0
+
+        ontologyProgress.value = { message: `${message} (${progress}%)` }
+
+        if (status === 'completed') {
+          clearInterval(interval)
+          // Fetch updated project
+          const proj = await getProject(projectId)
+          resolve(proj.data || proj)
+        } else if (status === 'failed') {
+          clearInterval(interval)
+          reject(new Error(task.message || 'Ontology generation failed'))
+        }
+      } catch (err) {
+        clearInterval(interval)
+        reject(err)
+      }
+    }, 5000) // Poll every 5 seconds
+  })
+}
+
+// Handle new project - call ontology/generate API (now async)
 const handleNewProject = async () => {
   const pending = getPendingUpload()
 
@@ -576,40 +606,37 @@ const handleNewProject = async () => {
 
   try {
     loading.value = true
-    currentPhase.value = 0 // Ontology generation phase
-    ontologyProgress.value = { message: 'Uploading files and analyzing documents...' }
+    currentPhase.value = 0
+    ontologyProgress.value = { message: 'Uploading files...' }
 
-    // Build FormData
     const formDataObj = new FormData()
     pending.files.forEach(file => {
       formDataObj.append('files', file)
     })
     formDataObj.append('simulation_requirement', pending.simulationRequirement)
 
-    // Call ontology generation API
+    // Start async ontology generation — returns immediately with task_id
     const response = await generateOntology(formDataObj)
 
-    if (response.success) {
-      // Clear pending upload data
-      clearPendingUpload()
-
-      // Update project ID and data
-      currentProjectId.value = response.data.project_id
-      projectData.value = response.data
-
-      // Update URL (no page refresh)
-      router.replace({
-        name: 'Process',
-        params: { projectId: response.data.project_id }
-      })
-
-      ontologyProgress.value = null
-
-      // Automatically start graph building
-      await startBuildGraph()
-    } else {
-      error.value = response.error || 'Ontology generation failed'
+    if (!response.success) {
+      error.value = response.error || 'Failed to start ontology generation'
+      return
     }
+
+    clearPendingUpload()
+    currentProjectId.value = response.data.project_id
+
+    router.replace({ name: 'Process', params: { projectId: response.data.project_id } })
+
+    ontologyProgress.value = { message: 'LLM analyzing documents... (this takes a few minutes on CPU)' }
+
+    // Poll until LLM finishes
+    const updatedProject = await pollOntologyTask(response.data.task_id, response.data.project_id)
+    projectData.value = updatedProject
+    ontologyProgress.value = null
+
+    // Automatically start graph building
+    await startBuildGraph()
   } catch (err) {
     console.error('Handle new project error:', err)
     error.value = 'Project initialization failed: ' + (err.message || 'Unknown error')

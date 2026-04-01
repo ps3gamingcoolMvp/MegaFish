@@ -185,3 +185,19 @@ export const getSimulationHistory = (limit = 20) => {
   return service.get('/api/simulation/history', { params: { limit } })
 }
 
+/**
+ * Start a world simulation (8.3B population)
+ * @param {Object} data - { scenario, date?, time_steps?, max_cohorts? }
+ */
+export const startWorldSimulation = (data) => {
+  return service.post('/api/simulation/world', data)
+}
+
+/**
+ * Poll world simulation status
+ * @param {string} simId
+ */
+export const getWorldSimulationStatus = (simId) => {
+  return service.get(`/api/simulation/world/${simId}`)
+}
+

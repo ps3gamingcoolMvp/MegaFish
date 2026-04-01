@@ -17,7 +17,7 @@ from ..models.task import TaskManager, TaskStatus
 from ..services.graph_tools import GraphToolsService
 from ..utils.logger import get_logger
 
-logger = get_logger('mirofish.api.report')
+logger = get_logger('megafish.api.report')
 
 
 # ============== Report Generation Interface ==============
@@ -198,7 +198,13 @@ def download_report(report_id: str):
             with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
                 f.write(report.markdown_content)
                 temp_path = f.name
-            return send_file(temp_path, as_attachment=True, download_name=f"{report_id}.md")
+            try:
+                return send_file(temp_path, as_attachment=True, download_name=f"{report_id}.md")
+            finally:
+                try:
+                    os.unlink(temp_path)
+                except Exception:
+                    pass
 
         return send_file(md_path, as_attachment=True, download_name=f"{report_id}.md")
 

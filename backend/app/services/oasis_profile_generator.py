@@ -21,8 +21,16 @@ from ..config import Config
 from ..utils.logger import get_logger
 from .entity_reader import EntityNode
 from ..storage import GraphStorage
+from .world_demographics import (
+    build_realistic_agent_background,
+    get_demographic_context_for_prompt,
+    weighted_sample,
+    COUNTRY_GROUPS,
+    ARCHETYPE_TO_MBTI,
+)
+from .agent_registry import get_registry
 
-logger = get_logger('mirofish.oasis_profile')
+logger = get_logger('megafish.oasis_profile')
 
 
 @dataclass
@@ -159,11 +167,13 @@ class OasisProfileGenerator:
         "ISTP", "ISFP", "ESTP", "ESFP"
     ]
 
-    # Common countries list
-    COUNTRIES = [
-        "US", "UK", "Japan", "Germany", "France",
-        "Canada", "Australia", "Brazil", "India", "South Korea"
-    ]
+    # Countries weighted by real-world population (via world_demographics)
+    # Use sample_country() instead of random.choice(COUNTRIES) for realism
+    @staticmethod
+    def sample_country() -> str:
+        """Sample a country weighted by real-world population distribution."""
+        entry = weighted_sample(COUNTRY_GROUPS, weight_idx=1)
+        return entry[0]
 
     # Individual type entities (need to generate specific personas)
     INDIVIDUAL_ENTITY_TYPES = [
@@ -631,12 +641,40 @@ class OasisProfileGenerator:
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "None"
         context_str = context[:3000] if context else "No additional context"
 
+        # Attach real-world demographic grounding to the prompt.
+        # If world_context is available, use population sim data to bias demographics.
+        wc = getattr(self, '_world_context', None)
+        if wc:
+            # Build a concise population-level summary for the LLM
+            by_region = wc.get('by_region', {})
+            top_regions = sorted(by_region.items(), key=lambda x: abs(x[1].get('sentiment', 0)), reverse=True)[:3]
+            top_region_str = ', '.join(f"{r} ({v.get('sentiment', 0):.2f})" for r, v in top_regions) if top_regions else 'N/A'
+
+            supportive = [c.get('description', '') for c in (wc.get('most_supportive_cohorts') or wc.get('most_supportive', []))[:2]]
+            opposed = [c.get('description', '') for c in (wc.get('most_opposed_cohorts') or wc.get('most_opposed', []))[:2]]
+            global_sent = wc.get('initial_global_sentiment', wc.get('global_sentiment', 'N/A'))
+
+            demo_context = (
+                f"Population Analysis (8.3B demographic model):\n"
+                f"- Global sentiment toward this scenario: {global_sent}\n"
+                f"- Most affected regions: {top_region_str}\n"
+                f"- Most supportive demographics: {'; '.join(supportive) if supportive else 'N/A'}\n"
+                f"- Most opposed demographics: {'; '.join(opposed) if opposed else 'N/A'}\n"
+                f"Use this to inform the agent's demographic background, geographic origin, and initial stance."
+            )
+        else:
+            demo = build_realistic_agent_background()
+            demo_context = get_demographic_context_for_prompt(demo)
+
         return f"""Generate a detailed social media user persona for the entity, maximizing restoration of existing reality.
 
 Entity Name: {entity_name}
 Entity Type: {entity_type}
 Entity Summary: {entity_summary}
 Entity Attributes: {attrs_str}
+
+Real-World Demographic Grounding (use as background context if entity details are sparse):
+{demo_context}
 
 Context Information:
 {context_str}
@@ -728,25 +766,27 @@ Important:
         entity_type_lower = entity_type.lower()
 
         if entity_type_lower in ["student", "alumni"]:
+            demo = build_realistic_agent_background()
             return {
                 "bio": f"{entity_type} with interests in academics and social issues.",
                 "persona": f"{entity_name} is a {entity_type.lower()} who is actively engaged in academic and social discussions. They enjoy sharing perspectives and connecting with peers.",
                 "age": random.randint(18, 30),
-                "gender": random.choice(["male", "female"]),
-                "mbti": random.choice(self.MBTI_TYPES),
-                "country": random.choice(self.COUNTRIES),
+                "gender": demo["gender"],
+                "mbti": demo["mbti"],
+                "country": demo["country"],
                 "profession": "Student",
                 "interested_topics": ["Education", "Social Issues", "Technology"],
             }
 
         elif entity_type_lower in ["publicfigure", "expert", "faculty"]:
+            demo = build_realistic_agent_background()
             return {
                 "bio": f"Expert and thought leader in their field.",
                 "persona": f"{entity_name} is a recognized {entity_type.lower()} who shares insights and opinions on important matters. They are known for their expertise and influence in public discourse.",
                 "age": random.randint(35, 60),
-                "gender": random.choice(["male", "female"]),
+                "gender": demo["gender"],
                 "mbti": random.choice(["ENTJ", "INTJ", "ENTP", "INTP"]),
-                "country": random.choice(self.COUNTRIES),
+                "country": demo["country"],
                 "profession": entity_attributes.get("occupation", "Expert"),
                 "interested_topics": ["Politics", "Economics", "Culture & Society"],
             }
@@ -755,9 +795,9 @@ Important:
             return {
                 "bio": f"Official account for {entity_name}. News and updates.",
                 "persona": f"{entity_name} is a media entity that reports news and facilitates public discourse. The account shares timely updates and engages with the audience on current events.",
-                "age": 30,  # Institutional virtual age
-                "gender": "other",  # Institutional uses other
-                "mbti": "ISTJ",  # Institutional style: rigorous conservative
+                "age": 30,
+                "gender": "other",
+                "mbti": "ISTJ",
                 "country": "US",
                 "profession": "Media",
                 "interested_topics": ["General News", "Current Events", "Public Affairs"],
@@ -767,31 +807,170 @@ Important:
             return {
                 "bio": f"Official account of {entity_name}.",
                 "persona": f"{entity_name} is an institutional entity that communicates official positions, announcements, and engages with stakeholders on relevant matters.",
-                "age": 30,  # Institutional virtual age
-                "gender": "other",  # Institutional uses other
-                "mbti": "ISTJ",  # Institutional style: rigorous conservative
+                "age": 30,
+                "gender": "other",
+                "mbti": "ISTJ",
                 "country": "US",
                 "profession": entity_type,
                 "interested_topics": ["Public Policy", "Community", "Official Announcements"],
             }
 
         else:
-            # Default persona
+            # Default persona — demographically realistic
+            demo = build_realistic_agent_background()
             return {
                 "bio": entity_summary[:150] if entity_summary else f"{entity_type}: {entity_name}",
                 "persona": entity_summary or f"{entity_name} is a {entity_type.lower()} participating in social discussions.",
-                "age": random.randint(25, 50),
-                "gender": random.choice(["male", "female"]),
-                "mbti": random.choice(self.MBTI_TYPES),
-                "country": random.choice(self.COUNTRIES),
-                "profession": entity_type,
+                "age": demo["age"],
+                "gender": demo["gender"],
+                "mbti": demo["mbti"],
+                "country": demo["country"],
+                "profession": demo["job"],
                 "interested_topics": ["General", "Social Issues"],
             }
     
     def set_graph_id(self, graph_id: str):
         """Set knowledge graph ID for knowledge graph search"""
         self.graph_id = graph_id
-    
+
+    def generate_synthetic_public_agents(
+        self,
+        count: int,
+        topic_context: str = "",
+        start_user_id: int = 1000,
+        output_platform: str = "twitter",
+    ) -> List[OasisAgentProfile]:
+        """
+        Generate demographically realistic background public agents.
+
+        These agents represent ordinary members of the global public who react to
+        the topic being simulated. Each agent is sampled from real-world population
+        distributions (world_demographics.py) so the crowd matches humanity.
+
+        Args:
+            count: Number of public agents to generate.
+            topic_context: Brief description of what's being simulated (used in persona).
+            start_user_id: Starting user_id for these agents.
+            output_platform: "twitter" or "reddit"
+
+        Returns:
+            List of OasisAgentProfile
+        """
+        registry = get_registry()
+        profiles = []
+
+        # Sample count unique agent IDs from the 8.3B pool
+        sampled = registry.sample_agents(count, filters={"min_age": 16})
+
+        for i, agent in enumerate(sampled):
+            uid = start_user_id + i
+
+            # Map registry personality to MBTI-style
+            personality_to_mbti = {
+                "analytical_thinker": "INTJ",
+                "empathetic_connector": "ENFJ",
+                "pragmatic_realist": "ISTJ",
+                "idealistic_dreamer": "INFP",
+                "cautious_skeptic": "INTP",
+                "bold_innovator": "ENTP",
+                "tradition_keeper": "ISFJ",
+                "social_conformist": "ESFJ",
+                "independent_rebel": "ESTP",
+                "quiet_observer": "ISFP",
+            }
+            mbti = personality_to_mbti.get(agent["personality"], "INFP")
+
+            # Build rich lifestyle and personality description
+            income = agent["income_usd_annual"]
+            if income < 2000:
+                income_desc = "very low income, daily essentials are a priority"
+                lifestyle = "subsistence lifestyle, strong community ties, limited digital access"
+            elif income < 8000:
+                income_desc = "low-to-middle income"
+                lifestyle = "working class, relies on family networks, price-sensitive consumer"
+            elif income < 25000:
+                income_desc = "middle income"
+                lifestyle = "aspirational middle class, follows trends, values stability"
+            elif income < 60000:
+                income_desc = "upper-middle income"
+                lifestyle = "comfortable lifestyle, politically engaged, global media consumer"
+            else:
+                income_desc = "high income"
+                lifestyle = "affluent, highly connected, opinion-forming, early adopter"
+
+            urban_desc = "urban dweller" if agent["urban"] else "rural or suburban resident"
+            employed_desc = "employed" if agent["employed"] else "unemployed or informally employed"
+            internet_desc = f"active online ({agent['social_media_behavior'].replace('_', ' ')})" if agent["internet_access"] else "limited or no internet access"
+
+            # New dimensions from MegaFish 8.3B model
+            culture_desc = agent.get("culture_type", "").replace("_", " ")
+            political_orientation = agent.get("political_orientation", agent["political_leaning"]).replace("_", " ")
+            power_level = agent.get("power_level", "community_member").replace("_", " ")
+            conflict_exp = agent.get("conflict_exposure", "stable_peaceful").replace("_", " ")
+            living_sit = agent.get("living_situation", "nuclear_family").replace("_", " ")
+            employment_t = agent.get("employment_type", "").replace("_", " ")
+            health_s = agent.get("health_status", "healthy").replace("_", " ")
+            info_acc = agent.get("info_access", "").replace("_", " ")
+            tech_acc = agent.get("tech_access", "").replace("_", " ")
+
+            persona = (
+                f"A {agent['age']}-year-old {agent['gender']} named {agent['name']}, "
+                f"living in {agent['country']} ({agent['region']}). "
+                f"Speaks {agent['language']}. Religion: {agent['religion']}. "
+                f"Culture: {culture_desc}. "
+                f"{urban_desc.capitalize()}, {employed_desc}. "
+                f"Employment: {employment_t}. "
+                f"Education: {agent['education']} level. "
+                f"Income: {income_desc} (${income:,}/year). "
+                f"Living situation: {living_sit}. "
+                f"Health: {health_s}. "
+                f"Personality archetype: {agent['personality'].replace('_', ' ')} — {mbti}. "
+                f"Political orientation: {political_orientation}. "
+                f"Societal power level: {power_level}. "
+                f"Conflict exposure: {conflict_exp}. "
+                f"Information access: {info_acc}. "
+                f"Technology access: {tech_acc}. "
+                f"Online behavior: {internet_desc}."
+            )
+            if topic_context:
+                persona += (
+                    f" Reacts to '{topic_context}' through the lens of their lived experience "
+                    f"in {agent['country']} as a {agent['personality'].replace('_', ' ')} "
+                    f"({culture_desc} culture, {political_orientation} orientation)."
+                )
+
+            username = f"{agent['name'].lower().replace(' ', '_')}_{agent['agent_id'] % 9999}"
+            bio = (
+                f"{agent['age']}yo {agent['gender']} from {agent['country']}. "
+                f"{agent['education'].title()} ed. {agent['personality'].replace('_', ' ').title()}. "
+                f"{employment_t.title()}."
+            )
+
+            profile = OasisAgentProfile(
+                user_id=uid,
+                user_name=username[:50],
+                name=agent["name"],
+                bio=bio[:200],
+                persona=persona,
+                karma=random.randint(1, 5000),
+                friend_count=random.randint(5, 1200),
+                follower_count=random.randint(0, 800),
+                statuses_count=random.randint(0, 5000),
+                age=agent["age"],
+                gender=agent["gender"],
+                mbti=mbti,
+                country=agent["country"],
+                profession=agent.get("profession", ""),
+                interested_topics=[agent["religion"], agent["region"], "Current Events"],
+            )
+            profiles.append(profile)
+
+        logger.info(
+            f"Generated {len(profiles)} agents from 8.3B registry "
+            f"({len(set(p.country for p in profiles))} countries represented)"
+        )
+        return profiles
+
     def generate_profiles_from_entities(
         self,
         entities: List[EntityNode],
@@ -800,7 +979,8 @@ Important:
         graph_id: Optional[str] = None,
         parallel_count: int = 5,
         realtime_output_path: Optional[str] = None,
-        output_platform: str = "reddit"
+        output_platform: str = "reddit",
+        world_context: Optional[Dict] = None,
     ) -> List[OasisAgentProfile]:
         """
         Generate Agent Profiles in batch from entities (supports parallel generation)
@@ -823,6 +1003,9 @@ Important:
         # Set graph_id for knowledge graph search
         if graph_id:
             self.graph_id = graph_id
+
+        # Store world_context so _build_individual_persona_prompt can use it
+        self._world_context = world_context or None
 
         total = len(entities)
         profiles = [None] * total  # Pre-allocate list to maintain order

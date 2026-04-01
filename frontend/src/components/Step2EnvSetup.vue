@@ -440,7 +440,7 @@
             <div class="rounds-header">
               <div class="header-left">
                 <span class="section-title">Simulation Rounds Setting</span>
-                <span class="section-desc">MiroFish Automatically plan and infer reality <span class="desc-highlight">{{ simulationConfig?.time_config?.total_simulation_hours || '-' }}</span> hours，Each round represents reality <span class="desc-highlight">{{ simulationConfig?.time_config?.minutes_per_round || '-' }}</span> minutes time elapsed</span>
+                <span class="section-desc">MegaFish Automatically plan and infer reality <span class="desc-highlight">{{ simulationConfig?.time_config?.total_simulation_hours || '-' }}</span> hours，Each round represents reality <span class="desc-highlight">{{ simulationConfig?.time_config?.minutes_per_round || '-' }}</span> minutes time elapsed</span>
               </div>
               <label class="switch-control">
                 <input type="checkbox" v-model="useCustomRounds">
@@ -645,7 +645,8 @@ const props = defineProps({
   simulationId: String,  // Passed from parent component
   projectData: Object,
   graphData: Object,
-  systemLogs: Array
+  systemLogs: Array,
+  worldContext: Object   // Population simulation result from world sim (optional)
 })
 
 const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status'])
@@ -783,26 +784,27 @@ const startPrepareSimulation = async () => {
     const res = await prepareSimulation({
       simulation_id: props.simulationId,
       use_llm_for_profiles: true,
-      parallel_profile_count: 5
+      parallel_profile_count: 5,
+      world_context: props.worldContext || null
     })
     
-    if (res.success && res.data) {
-      if (res.data.already_prepared) {
-        addLog('Detected existing completed preparation work，Use directly')
+    if (res.success && res?.data) {
+      if (res?.data?.already_prepared) {
+        addLog('Detected existing completed preparation work, using directly')
         await loadPreparedData()
         return
       }
-      
-      taskId.value = res.data.task_id
+
+      taskId.value = res?.data?.task_id
       addLog(`Preparation task started`)
-      addLog(`  └─ Task ID: ${res.data.task_id}`)
-      
-      // Set immediatelyExpected Agent Total（FromprepareInterface return value retrieval）
-      if (res.data.expected_entities_count) {
+      addLog(`  └─ Task ID: ${res?.data?.task_id}`)
+
+      // Set expected agent total from prepare interface return value
+      if (res?.data?.expected_entities_count) {
         expectedTotal.value = res.data.expected_entities_count
-        addLog(`FromNeo4jGraph read ${res.data.expected_entities_count} entities`)
-        if (res.data.entity_types && res.data.entity_types.length > 0) {
-          addLog(`  └─ Entity Type: ${res.data.entity_types.join(', ')}`)
+        addLog(`Read ${res.data.expected_entities_count} entities from graph`)
+        if (res?.data?.entity_types && res.data.entity_types.length > 0) {
+          addLog(`  └─ Entity types: ${res.data.entity_types.join(', ')}`)
         }
       }
       
@@ -987,11 +989,11 @@ const fetchConfigRealtime = async () => {
         
         // Show detailed configuration summary
         if (data.summary) {
-          addLog(`  ├─ AgentQuantity: ${data.summary.total_agents}Number`)
-          addLog(`  ├─ Simulation Duration: ${data.summary.simulation_hours}hours`)
-          addLog(`  ├─ Initial posts: ${data.summary.initial_posts_count}items`)
-          addLog(`  ├─ Trending Topics: ${data.summary.hot_topics_count}Number`)
-          addLog(`  └─ Platform configuration: Twitter ${data.summary.has_twitter_config ? '✓' : '✗'}, Reddit ${data.summary.has_reddit_config ? '✓' : '✗'}`)
+          addLog(`  ├─ Agent count: ${data?.summary?.total_agents}`)
+          addLog(`  ├─ Simulation duration: ${data?.summary?.simulation_hours} hours`)
+          addLog(`  ├─ Initial posts: ${data?.summary?.initial_posts_count}`)
+          addLog(`  ├─ Trending topics: ${data?.summary?.hot_topics_count}`)
+          addLog(`  └─ Platform config: Twitter ${data?.summary?.has_twitter_config ? '✓' : '✗'}, Reddit ${data?.summary?.has_reddit_config ? '✓' : '✗'}`)
         }
         
         // Show time configuration details
@@ -1035,9 +1037,9 @@ const loadPreparedData = async () => {
         
         // Show detailed configuration summary
         if (res.data.summary) {
-          addLog(`  ├─ AgentQuantity: ${res.data.summary.total_agents}Number`)
-          addLog(`  ├─ Simulation Duration: ${res.data.summary.simulation_hours}hours`)
-          addLog(`  └─ Initial posts: ${res.data.summary.initial_posts_count}items`)
+          addLog(`  ├─ Agent count: ${res?.data?.summary?.total_agents}`)
+          addLog(`  ├─ Simulation duration: ${res?.data?.summary?.simulation_hours} hours`)
+          addLog(`  └─ Initial posts: ${res?.data?.summary?.initial_posts_count}`)
         }
         
         addLog('✓ Env Setup Completed，Can start simulation')

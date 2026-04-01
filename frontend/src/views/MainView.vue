@@ -3,7 +3,7 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-left">
-        <div class="brand" @click="router.push('/')">MIROFISH OFFLINE</div>
+        <div class="brand" @click="router.push('/')">MEGAFISH OFFLINE</div>
       </div>
       
       <div class="header-center">
@@ -65,6 +65,7 @@
           :projectData="projectData"
           :graphData="graphData"
           :systemLogs="systemLogs"
+          :worldContext="_worldContext"
           @go-back="handleGoBack"
           @next-step="handleNextStep"
           @add-log="addLog"
@@ -82,6 +83,7 @@ import Step1GraphBuild from '../components/Step1GraphBuild.vue'
 import Step2EnvSetup from '../components/Step2EnvSetup.vue'
 import { generateOntology, getProject, buildGraph, getTaskStatus, getGraphData } from '../api/graph'
 import { getPendingUpload, clearPendingUpload } from '../store/pendingUpload'
+import { startWorldSimulation, getWorldSimulationStatus } from '../api/simulation'
 
 const route = useRoute()
 const router = useRouter()
@@ -104,6 +106,10 @@ const currentPhase = ref(-1) // -1: Upload, 0: Ontology, 1: Build, 2: Complete
 const ontologyProgress = ref(null)
 const buildProgress = ref(null)
 const systemLogs = ref([])
+
+// World simulation context (runs in parallel with graph build)
+const worldSimStatus = ref(null) // null | 'running' | 'done' | 'failed'
+let _worldContext = null // stores result when ready
 
 // Polling timers
 let pollTimer = null
@@ -186,6 +192,45 @@ const initProject = async () => {
   }
 }
 
+// Start world simulation in background and wait up to `timeoutMs` for it.
+// Returns the world sim result object, or null if it timed out / failed.
+const runWorldSimInBackground = async (scenario, timeoutMs = 120000) => {
+  try {
+    worldSimStatus.value = 'running'
+    addLog('World simulation started in background (analyzing 8.3B demographic reactions)...')
+    const res = await startWorldSimulation({ scenario, time_steps: 1, max_cohorts: 100 })
+    if (!res?.success && !res?.simulation_id) return null
+    const simId = res.simulation_id || res.data?.simulation_id
+    if (!simId) return null
+
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 5000))
+      try {
+        const poll = await getWorldSimulationStatus(simId)
+        const status = poll.status || poll.data?.status
+        if (status === 'completed') {
+          const result = poll.result || poll.data?.result
+          worldSimStatus.value = 'done'
+          addLog('World simulation complete — population context ready.')
+          return result
+        } else if (status === 'failed') {
+          worldSimStatus.value = 'failed'
+          addLog('World simulation failed — proceeding without population context.')
+          return null
+        }
+      } catch { /* keep polling */ }
+    }
+    worldSimStatus.value = 'failed'
+    addLog('World simulation timed out — proceeding without population context.')
+    return null
+  } catch (e) {
+    worldSimStatus.value = 'failed'
+    addLog(`World simulation error: ${e.message}`)
+    return null
+  }
+}
+
 const handleNewProject = async () => {
   const pending = getPendingUpload()
   if (!pending.isPending || pending.files.length === 0) {
@@ -208,11 +253,70 @@ const handleNewProject = async () => {
     if (res.success) {
       clearPendingUpload()
       currentProjectId.value = res.data.project_id
-      projectData.value = res.data
-      
       router.replace({ name: 'Process', params: { projectId: res.data.project_id } })
+
+      addLog(`Ontology task started (${res.data.task_id}). Waiting for LLM...`)
+      ontologyProgress.value = { message: 'LLM analyzing documents... (this takes a few minutes on CPU)' }
+
+      // Kick off world sim in parallel — don't await, just store the promise
+      const worldSimPromise = runWorldSimInBackground(pending.simulationRequirement, 120000)
+
+      // Poll until LLM finishes
+      await new Promise((resolve, reject) => {
+        const interval = setInterval(async () => {
+          try {
+            const taskRes = await getTaskStatus(res.data.task_id)
+            const task = taskRes.data || taskRes
+            const status = task.status
+            ontologyProgress.value = { message: `${task.message || 'Analyzing...'} (${task.progress || 0}%)` }
+            if (status === 'completed') {
+              clearInterval(interval)
+              const proj = await getProject(res.data.project_id)
+              projectData.value = proj.data || proj
+              resolve()
+            } else if (status === 'failed') {
+              clearInterval(interval)
+              reject(new Error(task.message || 'Ontology generation failed'))
+            }
+          } catch (e) {
+            // 404 means the task record was lost (e.g. backend restarted).
+            // Fall back to checking the project status directly — the LLM
+            // may have already finished even if the task record is gone.
+            const is404 = e?.response?.status === 404
+            if (is404) {
+              ontologyProgress.value = { message: 'Task record not found — checking project status...' }
+              addLog('Task 404 — falling back to project status check.')
+              try {
+                const proj = await getProject(res.data.project_id)
+                const projData = proj.data || proj
+                const projStatus = projData.status
+                if (projStatus === 'ontology_generated' || projStatus === 'graph_building' || projStatus === 'graph_completed' || projStatus === 'ready') {
+                  clearInterval(interval)
+                  projectData.value = projData
+                  resolve()
+                } else if (projStatus === 'failed') {
+                  clearInterval(interval)
+                  reject(new Error('Project failed during ontology generation.'))
+                }
+                // Otherwise keep polling the project status on the next tick
+              } catch (projErr) {
+                clearInterval(interval)
+                reject(projErr)
+              }
+            } else {
+              clearInterval(interval)
+              reject(e)
+            }
+          }
+        }, 5000)
+      })
+
       ontologyProgress.value = null
       addLog(`Ontology generated successfully for project ${res.data.project_id}`)
+
+      // Wait for world sim (it may already be done since ontology took a while)
+      _worldContext = await worldSimPromise
+
       await startBuildGraph()
     } else {
       error.value = res.error || 'Ontology generation failed'

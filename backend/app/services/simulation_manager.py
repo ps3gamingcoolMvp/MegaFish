@@ -18,7 +18,7 @@ from .entity_reader import EntityReader, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
 
-logger = get_logger('mirofish.simulation')
+logger = get_logger('megafish.simulation')
 
 
 class SimulationStatus(str, Enum):
@@ -236,6 +236,7 @@ class SimulationManager:
         progress_callback: Optional[callable] = None,
         parallel_profile_count: int = 3,
         storage: 'GraphStorage' = None,
+        world_context: Optional[Dict] = None,
     ) -> SimulationState:
         """
         Prepare simulation environment (fully automated)
@@ -338,6 +339,11 @@ class SimulationManager:
                 realtime_output_path = os.path.join(sim_dir, "twitter_profiles.csv")
                 realtime_platform = "twitter"
             
+            if world_context:
+                logger.info(f"World context injected: regions={len(world_context.get('by_region', {}))}, "
+                            f"cohorts={world_context.get('cohorts_used', 0)}, "
+                            f"global_sentiment={world_context.get('initial_global_sentiment', 'n/a')}")
+
             profiles = generator.generate_profiles_from_entities(
                 entities=filtered.entities,
                 use_llm=use_llm_for_profiles,
@@ -345,6 +351,7 @@ class SimulationManager:
                 graph_id=state.graph_id,  # Pass graph_id for graph retrieval
                 parallel_count=parallel_profile_count,  # Parallel generation count
                 realtime_output_path=realtime_output_path,  # Real-time save path
+                world_context=world_context,
                 output_platform=realtime_platform  # Output format
             )
             
@@ -522,7 +529,7 @@ class SimulationManager:
                 "parallel": f"python {scripts_dir}/run_parallel_simulation.py --config {config_path}",
             },
             "instructions": (
-                f"1. Activate conda environment: conda activate MiroFish\n"
+                f"1. Activate conda environment: conda activate MegaFish\n"
                 f"2. Run simulation (scripts located in {scripts_dir}):\n"
                 f"   - Run Twitter alone: python {scripts_dir}/run_twitter_simulation.py --config {config_path}\n"
                 f"   - Run Reddit alone: python {scripts_dir}/run_reddit_simulation.py --config {config_path}\n"

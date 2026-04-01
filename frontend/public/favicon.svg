@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#b0d8ee"/>
+      <stop offset="100%" stop-color="#6aaac8"/>
+    </radialGradient>
+    <radialGradient id="fb" cx="45%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#ff5533"/>
+      <stop offset="100%" stop-color="#bb1500"/>
+    </radialGradient>
+    <clipPath id="c"><circle cx="32" cy="32" r="30"/></clipPath>
+  </defs>
+  <!-- Circle background -->
+  <circle cx="32" cy="32" r="32" fill="#888"/>
+  <circle cx="32" cy="32" r="30" fill="url(#bg)"/>
+  <g clip-path="url(#c)">
+    <!-- Tail -->
+    <path d="M 14,35 Q 2,45 4,58 Q 12,46 18,40 Z" fill="#cc1a00" opacity="0.9"/>
+    <path d="M 14,32 Q 1,35 3,50 Q 12,40 17,36 Z" fill="#dd2200" opacity="0.85"/>
+    <path d="M 14,29 Q 2,22 5,36 Q 12,32 16,31 Z" fill="#cc1a00" opacity="0.8"/>
+    <!-- Body -->
+    <ellipse cx="34" cy="33" rx="18" ry="10" fill="url(#fb)"/>
+    <!-- Dorsal fin -->
+    <path d="M 26,24 Q 33,16 40,19 Q 45,22 46,24 L 40,24 Q 35,20 28,23 Z" fill="#bb1500" opacity="0.9"/>
+    <!-- Head -->
+    <ellipse cx="47" cy="33" rx="10" ry="9" fill="url(#fb)"/>
+    <!-- Eye -->
+    <circle cx="51" cy="30" r="3.5" fill="#1a0800"/>
+    <circle cx="52" cy="29" r="1.2" fill="white" opacity="0.7"/>
+    <!-- Glass sheen -->
+    <ellipse cx="25" cy="22" rx="14" ry="5" fill="white" opacity="0.2" transform="rotate(-20,25,22)"/>
+  </g>
+  <!-- Frame ring -->
+  <circle cx="32" cy="32" r="30" fill="none" stroke="#c0c0c0" stroke-width="3"/>
+  <circle cx="32" cy="32" r="32" fill="none" stroke="#a0a0a0" stroke-width="1.5"/>
+</svg>

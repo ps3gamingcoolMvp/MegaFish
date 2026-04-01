@@ -1,68 +1,86 @@
 <div align="center">
 
-<img src="./static/image/mirofish-offline-banner.png" alt="MiroFish Offline" width="100%"/>
+<img src="./static/image/megafish-banner.png" alt="MegaFish" width="100%"/>
 
-# MiroFish-Offline
+# MegaFish
 
-**Fully local fork of [MiroFish](https://github.com/666ghj/MiroFish) — no cloud APIs required. English UI.**
+**Fully local multi-agent social simulation — no cloud APIs required. English UI.**
 
-*A multi-agent swarm intelligence engine that simulates public opinion, market sentiment, and social dynamics. Entirely on your hardware.*
+*Upload a document. Watch hundreds of AI agents argue about it on the internet.*
 
-[![GitHub Stars](https://img.shields.io/github/stars/nikmcfly/MiroFish-Offline?style=flat-square&color=DAA520)](https://github.com/nikmcfly/MiroFish-Offline/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/nikmcfly/MiroFish-Offline?style=flat-square)](https://github.com/nikmcfly/MiroFish-Offline/network)
+[![GitHub Stars](https://img.shields.io/github/stars/ps3gamingcoolMvp/MegaFish?style=flat-square&color=ff2222)](https://github.com/ps3gamingcoolMvp/MegaFish/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/ps3gamingcoolMvp/MegaFish?style=flat-square)](https://github.com/ps3gamingcoolMvp/MegaFish/network)
 [![Docker](https://img.shields.io/badge/Docker-Build-2496ED?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square)](./LICENSE)
 
 </div>
 
+## Install
+
+**macOS / Linux**
+```bash
+curl -fsSL https://megafish.sh/install.sh | bash
+```
+
+**Windows (PowerShell)**
+```powershell
+irm https://megafish.sh/install.ps1 | iex
+```
+
+Then run:
+```bash
+megafish
+```
+
 ## What is this?
 
-MiroFish is a multi-agent simulation engine: upload any document (press release, policy draft, financial report), and it generates hundreds of AI agents with unique personalities that simulate the public reaction on social media. Posts, arguments, opinion shifts — hour by hour.
+MegaFish is a multi-agent simulation engine: upload any document (press release, policy draft, financial report), and it generates hundreds of AI agents with unique personalities that simulate the public reaction on social media. Posts, arguments, opinion shifts — hour by hour.
 
-The [original MiroFish](https://github.com/666ghj/MiroFish) was built for the Chinese market (Chinese UI, Zep Cloud for knowledge graphs, DashScope API). This fork makes it **fully local and fully English**:
+Everything runs on your machine. No cloud API keys. No data leaving your hardware.
 
-| Original MiroFish | MiroFish-Offline |
+This is a fork of [the original MegaFish](https://github.com/666ghj/MegaFish) (Chinese market, cloud APIs) rebuilt to be **fully local and fully English**:
+
+| Original MegaFish | This fork |
 |---|---|
 | Chinese UI | **English UI** (1,000+ strings translated) |
-| Zep Cloud (graph memory) | **Neo4j Community Edition 5.15** |
-| DashScope / OpenAI API (LLM) | **Ollama** (qwen2.5, llama3, etc.) |
-| Zep Cloud embeddings | **nomic-embed-text** via Ollama |
+| Zep Cloud (graph memory) | **Neo4j Community Edition 5.18** |
+| DashScope / OpenAI API | **Ollama** (qwen2.5, llama3, etc.) |
 | Cloud API keys required | **Zero cloud dependencies** |
 
 ## Workflow
 
-1. **Graph Build** — Extracts entities (people, companies, events) and relationships from your document. Builds a knowledge graph with individual and group memory via Neo4j.
+1. **Graph Build** — Extracts entities (people, companies, events) and relationships from your document. Builds a knowledge graph with memory via Neo4j.
 2. **Env Setup** — Generates hundreds of agent personas, each with unique personality, opinion bias, reaction speed, influence level, and memory of past events.
-3. **Simulation** — Agents interact on simulated social platforms: posting, replying, arguing, shifting opinions. The system tracks sentiment evolution, topic propagation, and influence dynamics in real time.
-4. **Report** — A ReportAgent analyzes the post-simulation environment, interviews a focus group of agents, searches the knowledge graph for evidence, and generates a structured analysis.
+3. **Simulation** — Agents interact on simulated social platforms: posting, replying, arguing, shifting opinions. Tracks sentiment evolution, topic propagation, and influence dynamics in real time.
+4. **Report** — A ReportAgent analyzes the simulation, interviews focus groups of agents, searches the knowledge graph for evidence, and generates a structured analysis.
 5. **Interaction** — Chat with any agent from the simulated world. Ask them why they posted what they posted. Full memory and personality persists.
 
 ## Screenshot
 
 <div align="center">
-<img src="./static/image/mirofish-offline-screenshot.jpg" alt="MiroFish Offline — English UI" width="100%"/>
+<img src="./static/image/megafish-screenshot.jpg" alt="MegaFish — English UI" width="100%"/>
 </div>
 
-## Quick Start
+## Manual Install
 
 ### Prerequisites
 
 - Docker & Docker Compose (recommended), **or**
-- Python 3.11+, Node.js 18+, Neo4j 5.15+, Ollama
+- Python 3.11+, Node.js 18+, Neo4j 5.18+, Ollama
 
 ### Option A: Docker (easiest)
 
 ```bash
-git clone https://github.com/nikmcfly/MiroFish-Offline.git
-cd MiroFish-Offline
+git clone https://github.com/ps3gamingcoolMvp/MegaFish.git
+cd MegaFish
 cp .env.example .env
 
-# Start all services (Neo4j, Ollama, MiroFish)
+# Start all services (Neo4j, Ollama, MegaFish)
 docker compose up -d
 
 # Pull the required models into Ollama
-docker exec mirofish-ollama ollama pull qwen2.5:32b
-docker exec mirofish-ollama ollama pull nomic-embed-text
+docker exec megafish-ollama ollama pull qwen2.5:32b
+docker exec megafish-ollama ollama pull nomic-embed-text
 ```
 
 Open `http://localhost:3000` — that's it.
@@ -74,8 +92,8 @@ Open `http://localhost:3000` — that's it.
 ```bash
 docker run -d --name neo4j \
   -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/mirofish \
-  neo4j:5.15-community
+  -e NEO4J_AUTH=neo4j/megafish \
+  neo4j:5.18-community
 ```
 
 **2. Start Ollama & pull models**
@@ -107,6 +125,19 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+## CLI
+
+The bootstrap installer adds a `megafish` command:
+
+```
+megafish           — start MegaFish
+megafish stop      — stop all services
+megafish status    — check service health
+megafish update    — pull latest version
+megafish uninstall — remove MegaFish
+megafish help      — show commands
+```
+
 ## Configuration
 
 All settings are in `.env` (copy from `.env.example`):
@@ -120,7 +151,7 @@ LLM_MODEL_NAME=qwen2.5:32b
 # Neo4j
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=mirofish
+NEO4J_PASSWORD=megafish
 
 # Embeddings
 EMBEDDING_MODEL=nomic-embed-text
@@ -130,8 +161,6 @@ EMBEDDING_BASE_URL=http://localhost:11434
 Works with any OpenAI-compatible API — swap Ollama for Claude, GPT, or any other provider by changing `LLM_BASE_URL` and `LLM_API_KEY`.
 
 ## Architecture
-
-This fork introduces a clean abstraction layer between the application and the graph database:
 
 ```
 ┌─────────────────────────────────────────┐
@@ -160,17 +189,13 @@ This fork introduces a clean abstraction layer between the application and the g
                │
         ┌──────▼──────┐
         │  Neo4j CE   │
-        │  5.15       │
+        │  5.18       │
         └─────────────┘
 ```
 
-**Key design decisions:**
-
-- `GraphStorage` is an abstract interface — swap Neo4j for any other graph DB by implementing one class
+- `GraphStorage` is an abstract interface — swap Neo4j for any graph DB by implementing one class
 - Dependency injection via Flask `app.extensions` — no global singletons
 - Hybrid search: 0.7 × vector similarity + 0.3 × BM25 keyword search
-- Synchronous NER/RE extraction via local LLM (replaces Zep's async episodes)
-- All original dataclasses and LLM tools (InsightForge, Panorama, Agent Interviews) preserved
 
 ## Hardware Requirements
 
@@ -181,7 +206,7 @@ This fork introduces a clean abstraction layer between the application and the g
 | Disk | 20 GB | 50 GB |
 | CPU | 4 cores | 8+ cores |
 
-CPU-only mode works but is significantly slower for LLM inference. For lighter setups, use `qwen2.5:14b` or `qwen2.5:7b`.
+CPU-only mode works but is significantly slower. For lighter setups, use `qwen2.5:14b` or `qwen2.5:7b`.
 
 ## Use Cases
 
@@ -192,14 +217,14 @@ CPU-only mode works but is significantly slower for LLM inference. For lighter s
 
 ## License
 
-AGPL-3.0 — same as the original MiroFish project. See [LICENSE](./LICENSE).
+AGPL-3.0 — same as the original MegaFish project. See [LICENSE](./LICENSE).
 
 ## Credits & Attribution
 
-This is a modified fork of [MiroFish](https://github.com/666ghj/MiroFish) by [666ghj](https://github.com/666ghj), originally supported by [Shanda Group](https://www.shanda.com/). The simulation engine is powered by [OASIS](https://github.com/camel-ai/oasis) from the CAMEL-AI team.
+Fork of [MegaFish](https://github.com/666ghj/MegaFish) by [666ghj](https://github.com/666ghj), originally supported by [Shanda Group](https://www.shanda.com/). Simulation engine powered by [OASIS](https://github.com/camel-ai/oasis) from the CAMEL-AI team.
 
-**Modifications in this fork:**
-- Backend migrated from Zep Cloud to local Neo4j CE 5.15 + Ollama
+**Changes in this fork:**
+- Backend migrated from Zep Cloud to local Neo4j CE 5.18 + Ollama
 - Entire frontend translated from Chinese to English (20 files, 1,000+ strings)
-- All Zep references replaced with Neo4j across the UI
-- Rebranded to MiroFish Offline
+- Bootstrap installer (`megafish` CLI) for macOS, Linux, and Windows
+- All Zep references replaced with Neo4j across UI and backend

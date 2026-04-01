@@ -3,7 +3,7 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-left">
-        <div class="brand" @click="router.push('/')">MIROFISH OFFLINE</div>
+        <div class="brand" @click="router.push('/')">MEGAFISH OFFLINE</div>
       </div>
       
       <div class="header-center">
@@ -138,9 +138,10 @@ const toggleMaximize = (target) => {
 
 // --- Data Logic ---
 const loadReportData = async () => {
+  if (!currentReportId.value) return
   try {
     addLog(`Loading report data: ${currentReportId.value}`)
-    
+
     // Get report info to retrieve simulation_id
     const reportRes = await getReport(currentReportId.value)
     if (reportRes.success && reportRes.data) {
@@ -204,7 +205,7 @@ watch(() => route.params.reportId, (newId) => {
     currentReportId.value = newId
     loadReportData()
   }
-}, { immediate: true })
+})
 
 onMounted(() => {
   addLog('ReportView initialized')

@@ -1,9 +1,8 @@
 import service, { requestWithRetry } from './index'
 
 /**
- * Generate ontology (upload documents and simulation requirements)
- * @param {Object} data - Contains files, simulation_requirement, project_name, etc.
- * @returns {Promise}
+ * Generate ontology (upload documents and simulation requirements).
+ * Returns immediately with project_id + task_id — poll getTaskStatus() for completion.
  */
 export function generateOntology(formData) {
   return requestWithRetry(() =>
@@ -11,11 +10,20 @@ export function generateOntology(formData) {
       url: '/api/graph/ontology/generate',
       method: 'post',
       data: formData,
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
+      headers: { 'Content-Type': 'multipart/form-data' }
     })
   )
+}
+
+/**
+ * Retry ontology generation for a stuck project (files already uploaded).
+ */
+export function retryOntology(projectId, data = {}) {
+  return service({
+    url: `/api/graph/ontology/retry/${projectId}`,
+    method: 'post',
+    data
+  })
 }
 
 /**

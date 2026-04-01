@@ -26,7 +26,7 @@ from .ner_extractor import NERExtractor
 from .search_service import SearchService
 from . import neo4j_schema
 
-logger = logging.getLogger('mirofish.neo4j_storage')
+logger = logging.getLogger('megafish.neo4j_storage')
 
 
 class Neo4jStorage(GraphStorage):
@@ -94,7 +94,8 @@ class Neo4jStorage(GraphStorage):
             except Exception:
                 raise
 
-        raise last_error  # type: ignore
+        if last_error:
+            raise last_error
 
     # ----------------------------------------------------------------
     # Graph lifecycle

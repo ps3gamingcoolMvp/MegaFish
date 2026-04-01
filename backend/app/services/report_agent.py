@@ -29,7 +29,7 @@ from .graph_tools import (
     InterviewResult
 )
 
-logger = get_logger('mirofish.report_agent')
+logger = get_logger('megafish.report_agent')
 
 
 class ReportLogger:
@@ -352,8 +352,8 @@ class ReportConsoleLogger:
 
         # Add to report_agent related loggers
         loggers_to_attach = [
-            'mirofish.report_agent',
-            'mirofish.graph_tools',
+            'megafish.report_agent',
+            'megafish.graph_tools',
         ]
 
         for logger_name in loggers_to_attach:
@@ -368,8 +368,8 @@ class ReportConsoleLogger:
 
         if self._file_handler:
             loggers_to_detach = [
-                'mirofish.report_agent',
-                'mirofish.graph_tools',
+                'megafish.report_agent',
+                'megafish.graph_tools',
             ]
 
             for logger_name in loggers_to_detach:
@@ -1004,7 +1004,10 @@ class ReportAgent:
                 query = parameters.get("query", "")
                 limit = parameters.get("limit", 10)
                 if isinstance(limit, str):
-                    limit = int(limit)
+                    try:
+                        limit = int(limit)
+                    except ValueError:
+                        limit = 10
                 result = self.graph_tools.quick_search(
                     graph_id=self.graph_id,
                     query=query,
@@ -1017,7 +1020,10 @@ class ReportAgent:
                 interview_topic = parameters.get("interview_topic", parameters.get("query", ""))
                 max_agents = parameters.get("max_agents", 5)
                 if isinstance(max_agents, str):
-                    max_agents = int(max_agents)
+                    try:
+                        max_agents = int(max_agents)
+                    except ValueError:
+                        max_agents = 5
                 max_agents = min(max_agents, 10)
                 result = self.graph_tools.interview_agents(
                     simulation_id=self.simulation_id,
@@ -1494,8 +1500,7 @@ class ReportAgent:
                 continue
 
             # Directly adopt this content as final answer, no more waiting
-            # directlyconvertthis contentas finalanswer, no more waiting
-            logger.info(f"Section {section.title} did not detectto 'Final Answer:' prefix, directlyadoptLLM outputas finalcontent（Tool call: {tool_calls_count}times)")
+            logger.info(f"Section {section.title} did not detect 'Final Answer:' prefix, directly adopting LLM output as final content (tool calls: {tool_calls_count})")
             final_answer = response.strip()
 
             if self.report_logger:
@@ -1507,8 +1512,8 @@ class ReportAgent:
                 )
             return final_answer
         
-        # Reachedmaximum iterations, forcegeneratecontent
-        logger.warning(f"Section {section.title} reachedmaximumiterationscount，Forcegenerate")
+        # Reached maximum iterations, force generate content
+        logger.warning(f"Section {section.title} reached maximum iteration count, forcing generation")
         messages.append({"role": "user", "content": REACT_FORCE_FINAL_MSG})
         
         response = self.llm.chat(
@@ -1517,16 +1522,15 @@ class ReportAgent:
             max_tokens=4096
         )
 
-        # Check forceconclusion when LLM return is None
+        # Check forced conclusion when LLM return is None
         if response is None:
             final_answer = f"(This section generation failed: LLM returned empty response, please retry later)"
-            final_answer = f"(ThisSectiongeneratefailed: LLM returnedemptyresponse, pleaselaterretry)"
         elif "Final Answer:" in response:
             final_answer = response.split("Final Answer:")[-1].strip()
         else:
             final_answer = response
         
-        # Log sectioncontentgeneratecompletion log
+        # Log section content generation completion
         if self.report_logger:
             self.report_logger.log_section_content(
                 section_title=section.title,
@@ -1546,18 +1550,15 @@ class ReportAgent:
         Generate complete report (realtime output per section)
         
         File structure:
-        File structure:
         reports/{report_id}/
             outline.json    - Report outline
             progress.json   - Generation progress
             section_01.md   - Section 1
             section_02.md   - Section 2
-            section_02.md   - Section 2
             ...
             full_report.md  - Complete report
-        
+
         Args:
-            report_id: Report ID (optional, auto-generate if not provided)
             report_id: Report ID (optional, auto-generate if not provided)
             
         Returns:
@@ -1565,7 +1566,7 @@ class ReportAgent:
         """
         import uuid
         
-        # If not provided report_id，then autogenerate
+        # If report_id not provided, auto-generate one
         if not report_id:
             report_id = f"report_{uuid.uuid4().hex[:12]}"
         start_time = datetime.now()
@@ -1579,14 +1580,14 @@ class ReportAgent:
             created_at=datetime.now().isoformat()
         )
         
-        # CompletedSection Titlelist（for progress tracking）
+        # Completed section title list (for progress tracking)
         completed_section_titles = []
         
         try:
             # Initialize: Create report folder and save initial state
             ReportManager._ensure_report_folder(report_id)
             
-            # Initialize logslogger（structured logs agent_log.jsonl）
+            # Initialize log logger (structured logs agent_log.jsonl)
             self.report_logger = ReportLogger(report_id)
             self.report_logger.log_start(
                 simulation_id=self.simulation_id,
@@ -1594,16 +1595,16 @@ class ReportAgent:
                 simulation_requirement=self.simulation_requirement
             )
             
-            # Initialize console logslogger（console_log.txt）
+            # Initialize console log logger (console_log.txt)
             self.console_logger = ReportConsoleLogger(report_id)
             
             ReportManager.update_progress(
-                report_id, "pending", 0, "Initializereport...",
+                report_id, "pending", 0, "Initializing report...",
                 completed_sections=[]
             )
             ReportManager.save_report(report)
             
-            # phase1: planoutline
+            # Phase 1: Plan outline
             report.status = ReportStatus.PLANNING
             ReportManager.update_progress(
                 report_id, "planning", 5, "Start planning report outline...",
@@ -1622,24 +1623,24 @@ class ReportAgent:
             )
             report.outline = outline
             
-            # recordplancompletion log
+            # Record plan completion log
             self.report_logger.log_planning_complete(outline.to_dict())
             
-            # saveoutlinetofile
+            # Save outline to file
             ReportManager.save_outline(report_id, outline)
             ReportManager.update_progress(
-                report_id, "planning", 15, f"Outline planning completed, total{len(outline.sections)}sections",
+                report_id, "planning", 15, f"Outline planning completed, total {len(outline.sections)} sections",
                 completed_sections=[]
             )
             ReportManager.save_report(report)
             
-            logger.info(f"outlinesavedtofile: {report_id}/outline.json")
+            logger.info(f"Outline saved to file: {report_id}/outline.json")
             
-            # Phase 2: Sequentially generate sectionsgeneration (per sectionsave）
+            # Phase 2: Sequentially generate sections (save each section as it completes)
             report.status = ReportStatus.GENERATING
             
             total_sections = len(outline.sections)
-            generated_sections = []  # savecontentfor context
+            generated_sections = []  # Save content for context
             
             for i, section in enumerate(outline.sections):
                 section_num = i + 1
@@ -1648,16 +1649,16 @@ class ReportAgent:
                 # Update progress
                 ReportManager.update_progress(
                     report_id, "generating", base_progress,
-                    f"generatinggenerateSection: {section.title} ({section_num}/{total_sections})",
+                    f"Generating section: {section.title} ({section_num}/{total_sections})",
                     current_section=section.title,
                     completed_sections=completed_section_titles
                 )
-                
+
                 if progress_callback:
                     progress_callback(
-                        "generating", 
-                        base_progress, 
-                        f"generatinggenerateSection: {section.title} ({section_num}/{total_sections})"
+                        "generating",
+                        base_progress,
+                        f"Generating section: {section.title} ({section_num}/{total_sections})"
                     )
                 
                 # Generate main sectioncontent
@@ -1677,11 +1678,11 @@ class ReportAgent:
                 section.content = section_content
                 generated_sections.append(f"## {section.title}\n\n{section_content}")
 
-                # saveSection
+                # Save section
                 ReportManager.save_section(report_id, section_num, section)
                 completed_section_titles.append(section.title)
 
-                # Log sectioncompletion log
+                # Log section completion
                 full_section_content = f"## {section.title}\n\n{section_content}"
 
                 if self.report_logger:
@@ -1691,7 +1692,7 @@ class ReportAgent:
                         full_content=full_section_content.strip()
                     )
 
-                logger.info(f"Sectionsaved: {report_id}/section_{section_num:02d}.md")
+                logger.info(f"Section saved: {report_id}/section_{section_num:02d}.md")
                 
                 # Update progress
                 ReportManager.update_progress(
@@ -1702,16 +1703,16 @@ class ReportAgent:
                     completed_sections=completed_section_titles
                 )
             
-            # phase3: assembleComplete report
+            # Phase 3: Assemble complete report
             if progress_callback:
-                progress_callback("generating", 95, "generatingassemblecompletereport...")
-            
+                progress_callback("generating", 95, "Assembling complete report...")
+
             ReportManager.update_progress(
-                report_id, "generating", 95, "generatingassemblecompletereport...",
+                report_id, "generating", 95, "Assembling complete report...",
                 completed_sections=completed_section_titles
             )
             
-            # Using ReportManagerassembleComplete report
+            # Use ReportManager to assemble the complete report
             report.markdown_content = ReportManager.assemble_full_report(report_id, outline)
             report.status = ReportStatus.COMPLETED
             report.completed_at = datetime.now().isoformat()
@@ -1719,52 +1720,52 @@ class ReportAgent:
             # Calculate total elapsed time
             total_time_seconds = (datetime.now() - start_time).total_seconds()
             
-            # recordReportcompletion log
+            # Record report completion log
             if self.report_logger:
                 self.report_logger.log_report_complete(
                     total_sections=total_sections,
                     total_time_seconds=total_time_seconds
                 )
             
-            # savefinalReport
+            # Save final report
             ReportManager.save_report(report)
             ReportManager.update_progress(
-                report_id, "completed", 100, "reportgeneratecomplete",
+                report_id, "completed", 100, "Report generation complete",
                 completed_sections=completed_section_titles
             )
-            
+
             if progress_callback:
-                progress_callback("completed", 100, "reportgeneratecomplete")
+                progress_callback("completed", 100, "Report generation complete")
+
+            logger.info(f"Report generation complete: {report_id}")
             
-            logger.info(f"reportgeneratecomplete: {report_id}")
-            
-            # Closeconsoleloglogger
+            # Close console log logger
             if self.console_logger:
                 self.console_logger.close()
                 self.console_logger = None
-            
+
             return report
-            
+
         except Exception as e:
-            logger.error(f"reportgeneratefailed: {str(e)}")
+            logger.error(f"Report generation failed: {str(e)}")
             report.status = ReportStatus.FAILED
             report.error = str(e)
             
-            # recorderrorlog
+            # Record error log
             if self.report_logger:
                 self.report_logger.log_error(str(e), "failed")
             
-            # savefailedstatus
+            # Save failed status
             try:
                 ReportManager.save_report(report)
                 ReportManager.update_progress(
-                    report_id, "failed", -1, f"reportgeneratefailed: {str(e)}",
+                    report_id, "failed", -1, f"Report generation failed: {str(e)}",
                     completed_sections=completed_section_titles
                 )
             except Exception:
-                pass  # ignoresavefailederror
-            
-            # Closeconsoleloglogger
+                pass  # Ignore save-failed error
+
+            # Close console log logger
             if self.console_logger:
                 self.console_logger.close()
                 self.console_logger = None
@@ -1772,49 +1773,49 @@ class ReportAgent:
             return report
     
     def chat(
-        self, 
+        self,
         message: str,
         chat_history: List[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
-        andReport Agentchat
-        
-        inchatinAgentcan autonomouslycallretrievaltoolto answer questions
-        
+        Chat with the Report Agent.
+
+        During chat the agent can autonomously call retrieval tools to answer questions.
+
         Args:
             message: user message
-            chat_history: chathistory
-            
+            chat_history: chat history
+
         Returns:
             {
-                "response": "Agentresponse",
-                "tool_calls": [calltoollist],
-                "sources": [informationsource]
+                "response": "Agent response",
+                "tool_calls": [list of tool calls],
+                "sources": [information sources]
             }
         """
-        logger.info(f"Report Agentchat: {message[:50]}...")
+        logger.info(f"Report Agent chat: {message[:50]}...")
         
         chat_history = chat_history or []
         
-        # GetalreadygenerateReportcontent
+        # Get already generated report content
         report_content = ""
         try:
             report = ReportManager.get_report_by_simulation(self.simulation_id)
             if report and report.markdown_content:
-                # limitReportlength，avoid overly long context
+                # Limit report length to avoid overly long context
                 report_content = report.markdown_content[:15000]
                 if len(report.markdown_content) > 15000:
-                    report_content += "\n\n... [reportcontenthasTruncate] ..."
+                    report_content += "\n\n... [report content truncated] ..."
         except Exception as e:
-            logger.warning(f"getreportcontentfailed: {e}")
+            logger.warning(f"Failed to get report content: {e}")
         
         system_prompt = CHAT_SYSTEM_PROMPT_TEMPLATE.format(
             simulation_requirement=self.simulation_requirement,
-            report_content=report_content if report_content else "（nonereport）",
+            report_content=report_content if report_content else "(no report available)",
             tools_description=self._get_tools_description(),
         )
 
-        # Buildmessage
+        # Build messages
         messages = [{"role": "system", "content": system_prompt}]
         
         # add historychat
@@ -2096,7 +2097,7 @@ class ReportManager:
         with open(cls._get_outline_path(report_id), 'w', encoding='utf-8') as f:
             json.dump(outline.to_dict(), f, ensure_ascii=False, indent=2)
         
-        logger.info(f"outlinesaved: {report_id}")
+        logger.info(f"Outline saved: {report_id}")
     
     @classmethod
     def save_section(
@@ -2439,16 +2440,16 @@ class ReportManager:
         with open(cls._get_report_path(report.report_id), 'w', encoding='utf-8') as f:
             json.dump(report.to_dict(), f, ensure_ascii=False, indent=2)
         
-        # saveoutline
+        # Save outline
         if report.outline:
             cls.save_outline(report.report_id, report.outline)
-        
-        # saveCompleteMarkdownReport
+
+        # Save complete Markdown report
         if report.markdown_content:
             with open(cls._get_report_markdown_path(report.report_id), 'w', encoding='utf-8') as f:
                 f.write(report.markdown_content)
-        
-        logger.info(f"reportsaved: {report.report_id}")
+
+        logger.info(f"Report saved: {report.report_id}")
     
     @classmethod
     def get_report(cls, report_id: str) -> Optional[Report]:
