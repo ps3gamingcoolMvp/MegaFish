@@ -1917,8 +1917,13 @@ class ReportManager:
     
     @classmethod
     def _get_report_folder(cls, report_id: str) -> str:
-        """getreportfolderpath"""
-        return os.path.join(cls.REPORTS_DIR, report_id)
+        """Return the absolute folder path for a report, rejecting path traversal attempts."""
+        # Resolve to prevent ../ traversal
+        folder = os.path.realpath(os.path.join(cls.REPORTS_DIR, report_id))
+        base = os.path.realpath(cls.REPORTS_DIR)
+        if not folder.startswith(base + os.sep) and folder != base:
+            raise ValueError(f"Invalid report_id: {report_id!r}")
+        return folder
     
     @classmethod
     def _ensure_report_folder(cls, report_id: str) -> str:

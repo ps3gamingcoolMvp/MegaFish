@@ -136,8 +136,11 @@ class SimulationManager:
         self._simulations: Dict[str, SimulationState] = {}
     
     def _get_simulation_dir(self, simulation_id: str) -> str:
-        """Get simulation data directory"""
-        sim_dir = os.path.join(self.SIMULATION_DATA_DIR, simulation_id)
+        """Return the absolute directory path for a simulation, rejecting path traversal."""
+        sim_dir = os.path.realpath(os.path.join(self.SIMULATION_DATA_DIR, simulation_id))
+        base = os.path.realpath(self.SIMULATION_DATA_DIR)
+        if not sim_dir.startswith(base + os.sep) and sim_dir != base:
+            raise ValueError(f"Invalid simulation_id: {simulation_id!r}")
         os.makedirs(sim_dir, exist_ok=True)
         return sim_dir
     

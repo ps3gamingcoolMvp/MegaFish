@@ -169,3 +169,22 @@ def test_simulation_state_to_simple_dict_omits_verbose_fields(tmp_sim_dir):
     assert "twitter_status" not in simple
     assert "reddit_status" not in simple
     assert "current_round" not in simple
+
+
+# ---------------------------------------------------------------------------
+# Path traversal protection
+# ---------------------------------------------------------------------------
+
+def test_get_simulation_dir_rejects_path_traversal(tmp_sim_dir):
+    """simulation_id with ../ must raise ValueError, not silently traverse up."""
+    manager = make_manager(tmp_sim_dir)
+    with pytest.raises(ValueError, match="Invalid simulation_id"):
+        manager._get_simulation_dir("../../etc/passwd")
+
+
+def test_get_simulation_dir_rejects_absolute_traversal(tmp_sim_dir):
+    """Absolute paths passed as simulation_id must be rejected."""
+    import tempfile
+    manager = make_manager(tmp_sim_dir)
+    with pytest.raises(ValueError, match="Invalid simulation_id"):
+        manager._get_simulation_dir("/tmp/evil")
