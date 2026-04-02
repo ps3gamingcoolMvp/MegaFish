@@ -8,9 +8,8 @@
 
 *Upload a document. Watch hundreds of AI agents argue about it on the internet.*
 
-[![GitHub Stars](https://img.shields.io/github/stars/ps3gamingcoolMvp/MegaFish?style=flat-square&color=ff2222)](https://github.com/ps3gamingcoolMvp/MegaFish/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/ps3gamingcoolMvp/MegaFish?style=flat-square)](https://github.com/ps3gamingcoolMvp/MegaFish/network)
-[![Docker](https://img.shields.io/badge/Docker-Build-2496ED?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/)
+[![GitHub Stars](https://img.shields.io/github/stars/Inventor-ai-god/MegaFish?style=flat-square&color=ff2222)](https://github.com/Inventor-ai-god/MegaFish/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/Inventor-ai-god/MegaFish?style=flat-square)](https://github.com/Inventor-ai-god/MegaFish/network)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square)](./LICENSE)
 
 </div>
@@ -19,12 +18,12 @@
 
 **macOS / Linux**
 ```bash
-curl -fsSL https://megafish.sh/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Inventor-ai-god/MegaFish/main/install.sh | bash
 ```
 
-**Windows (PowerShell)**
+**Windows (PowerShell — run as Administrator)**
 ```powershell
-irm https://megafish.sh/install.ps1 | iex
+irm https://raw.githubusercontent.com/Inventor-ai-god/MegaFish/main/install.ps1 | iex
 ```
 
 Then run:
@@ -90,7 +89,7 @@ Opens `localhost:3000/report/report_xxxx` — the full visual report in the fron
 MegaFish is a **terminal-first app**. One command installs everything and it runs 100% locally — no data ever leaves your machine:
 
 ```bash
-curl -fsSL https://megafish.sh/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Inventor-ai-god/MegaFish/main/install.sh | bash
 ```
 
 ## Screenshot
