@@ -55,6 +55,44 @@ This is a fork of [the original MegaFish](https://github.com/666ghj/MegaFish) (C
 4. **Report** — A ReportAgent analyzes the simulation, interviews focus groups of agents, searches the knowledge graph for evidence, and generates a structured analysis.
 5. **Interaction** — Chat with any agent from the simulated world. Ask them why they posted what they posted. Full memory and personality persists.
 
+## How it works
+
+When you run `megafish "your scenario"`, here's what happens under the hood:
+
+**Step 1 — Ontology Generation**
+The LLM reads your scenario and designs a social map: which types of people exist in this world (`TechJournalist`, `Consumer`, `Competitor`) and how they relate (`REPORTS_ON`, `COMPETES_WITH`). This blueprint — the *ontology* — defines the rules of the simulated world.
+> *Fix: context window raised from 2,048 → 8,192 tokens and output limit from 1,200 → 4,096 to stop the LLM cutting off mid-JSON.*
+
+**Step 2 — Knowledge Graph Build**
+Populates the ontology with real entities extracted from your document: nodes like `Apple Inc`, `Tim Cook`, `Samsung`; edges like `Tim Cook → WORKS_FOR → Apple Inc`. This is the world agents will live in (stored in Neo4j).
+
+**Step 3 — Create Simulation**
+Reserves a simulation slot with a unique ID (`sim_xxxx`). No agents yet — just a placeholder.
+
+**Step 4 — Generate Agent Personas**
+For every entity in the knowledge graph, the LLM generates a fake social-media profile: name, personality, political lean, writing style, posting habits. Profiles are saved as `reddit_profiles.json` and `twitter_profiles.csv`. 20 entities = 20 LLM calls.
+> *Fix: this step was never being called — the CLI was jumping straight from "Create Simulation" to "done". Now correctly wired in.*
+
+**Step 5 — Run Simulation**
+Launches a background process. Agents read the scenario and start posting on fake Twitter/Reddit — replying, retweeting, upvoting, shifting opinions. Each round = a chunk of simulated time. Actions are streamed to `actions.jsonl` in real time.
+
+**Step 6 — Poll Progress**
+The CLI watches progress (`● Sim: round 3/10`) until all rounds finish.
+
+**Step 7 — Generate Report**
+The LLM reads all agent actions and writes a structured report: overall public sentiment, key narratives that emerged, which groups drove the conversation, and how opinion evolved over time.
+
+**Step 8 — Open Browser**
+Opens `localhost:3000/report/report_xxxx` — the full visual report in the frontend.
+
+---
+
+MegaFish is a **terminal-first app**. One command installs everything and it runs 100% locally — no data ever leaves your machine:
+
+```bash
+curl -fsSL https://megafish.sh/install.sh | bash
+```
+
 ## Screenshot
 
 <div align="center">

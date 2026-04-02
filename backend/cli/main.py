@@ -11,9 +11,14 @@ from .client import (
     build_graph,
     create_simulation,
     generate_ontology,
+    generate_report,
     get_result_url,
+    poll_prepare,
+    poll_report,
     poll_simulation,
     poll_task,
+    prepare_simulation,
+    start_simulation,
 )
 
 app = typer.Typer(
@@ -71,7 +76,9 @@ def _run_simulation(prompt: str, file_path: str | None) -> str:
         raise RuntimeError(f"Ontology generation failed: {result}")
 
     if task_id:
-        poll_task(task_id, on_progress=lambda m: ui.status(f"Ontology: {m}"))
+        t = poll_task(task_id, on_progress=lambda m: ui.status(f"Ontology: {m}"))
+        if t.get("status") in ("failed", "error"):
+            raise RuntimeError(f"Ontology generation failed: {t.get('message', 'unknown error')}")
 
     # Step 2: Build knowledge graph (async)
     ui.status("Building knowledge graph...")
@@ -79,19 +86,49 @@ def _run_simulation(prompt: str, file_path: str | None) -> str:
     graph_data = graph_resp.get("data") or graph_resp
     graph_task_id = graph_data.get("task_id")
     if graph_task_id:
-        poll_task(graph_task_id, on_progress=lambda m: ui.status(f"Graph: {m}"))
+        t = poll_task(graph_task_id, on_progress=lambda m: ui.status(f"Graph: {m}"))
+        if t.get("status") in ("failed", "error"):
+            raise RuntimeError(f"Graph build failed: {t.get('message', 'unknown error')}")
 
     # Step 3: Create simulation
-    ui.status("Generating agents and running simulation...")
+    ui.status("Creating simulation...")
     sim_resp = create_simulation(project_id)
     sim_data = sim_resp.get("data") or sim_resp
     sim_id = sim_data.get("simulation_id") or sim_data.get("id")
     if not sim_id:
         raise RuntimeError(f"Simulation creation failed: {sim_resp}")
+
+    # Step 4: Prepare simulation (generate agent personas)
+    ui.status("Generating agent personas...")
+    prep = prepare_simulation(sim_id)
+    prep_data = prep.get("data") or prep
+    prep_task_id = prep_data.get("task_id")
+    if prep_data.get("already_prepared"):
+        ui.status("Agents already prepared.")
+    elif prep_task_id:
+        poll_prepare(prep_task_id, sim_id,
+                     on_progress=lambda m: ui.status(f"Prepare: {m}"))
+
+    # Step 5: Start simulation
+    ui.status("Starting simulation...")
+    start_simulation(sim_id)
+
+    # Step 6: Poll simulation to completion
     poll_simulation(sim_id, on_progress=lambda m: ui.status(f"Sim: {m}"))
 
+    # Step 4: Generate report
+    ui.status("Generating report...")
+    rep = generate_report(sim_id)
+    rep_data = rep.get("data") or rep
+    report_id = rep_data.get("report_id")
+    rep_task_id = rep_data.get("task_id")
+    if rep_task_id:
+        poll_report(rep_task_id, on_progress=lambda m: ui.status(f"Report: {m}"))
+    if not report_id:
+        raise RuntimeError(f"Report generation failed: {rep}")
+
     port = launcher.check_frontend() or 3000
-    return get_result_url(sim_id, port)
+    return get_result_url(report_id, port)
 
 
 
@@ -116,7 +153,6 @@ def uninstall():
 @app.command()
 def status():
     """Show status of all MegaFish services."""
-    ui.splash()
     neo4j = launcher.check_neo4j()
     ollama = launcher.check_ollama()
     backend = launcher.check_backend()
@@ -137,7 +173,6 @@ def stop():
 @app.command(name="help")
 def help_cmd():
     """Show MegaFish commands, usage, and info."""
-    ui.splash()
     ui.console.print("  [bold red]Commands[/bold red]\n")
     ui.console.print("    [red]megafish[/red]                   Run a simulation (interactive prompt)")
     ui.console.print("    [red]megafish[/red] [dim]\"your scenario\"[/dim]  Run a simulation directly")

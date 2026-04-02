@@ -193,11 +193,10 @@ class OntologyGenerator:
             {"role": "user", "content": user_message}
         ]
 
-        # Call LLM — 1200 tokens is enough for the full ontology JSON
         result = self.llm_client.chat_json(
             messages=messages,
             temperature=0.3,
-            max_tokens=1200
+            max_tokens=4096
         )
 
         # Validate and post-process

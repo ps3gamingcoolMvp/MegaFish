@@ -64,7 +64,7 @@ class LLMClient:
             raise ValueError("LLM_API_KEY not configured")
 
         self._timeout = timeout
-        self._num_ctx = int(os.environ.get('OLLAMA_NUM_CTX', '2048'))
+        self._num_ctx = int(os.environ.get('OLLAMA_NUM_CTX', '8192'))
 
         # If another instance already found the primary is down, start in fallback immediately
         with _provider_lock:

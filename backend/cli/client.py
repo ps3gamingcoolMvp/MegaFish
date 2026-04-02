@@ -95,6 +95,56 @@ def create_simulation(project_id: str) -> dict:
     return r.json()
 
 
+def prepare_simulation(sim_id: str) -> dict:
+    """Start async simulation preparation (generate agent personas)."""
+    r = requests.post(
+        f"{BASE}/api/simulation/prepare",
+        json={"simulation_id": sim_id},
+        timeout=10,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def poll_prepare(
+    task_id: str,
+    sim_id: str,
+    on_progress: Optional[Callable[[str], None]] = None,
+    interval: int = 3,
+) -> dict:
+    """Poll POST /api/simulation/prepare/status until ready."""
+    while True:
+        r = requests.post(
+            f"{BASE}/api/simulation/prepare/status",
+            json={"task_id": task_id, "simulation_id": sim_id},
+            timeout=10,
+        )
+        r.raise_for_status()
+        payload = r.json()
+        data = payload.get("data") or payload
+        status = data.get("status", "")
+        progress = data.get("progress", 0)
+        msg = data.get("message") or f"{progress}%"
+        if on_progress:
+            on_progress(str(msg))
+        if data.get("already_prepared") or status in ("ready", "completed"):
+            return data
+        if status in ("failed", "error"):
+            raise RuntimeError(f"Simulation prepare failed: {msg}")
+        time.sleep(interval)
+
+
+def start_simulation(sim_id: str) -> dict:
+    """Start the simulation process after preparation is complete."""
+    r = requests.post(
+        f"{BASE}/api/simulation/start",
+        json={"simulation_id": sim_id},
+        timeout=30,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
 def poll_simulation(
     sim_id: str,
     on_progress: Optional[Callable[[str], None]] = None,
@@ -115,5 +165,35 @@ def poll_simulation(
         time.sleep(interval)
 
 
-def get_result_url(sim_id: str, port: int = 3000) -> str:
-    return f"http://localhost:{port}/simulation/{sim_id}/start"
+def generate_report(sim_id: str) -> dict:
+    """Start async report generation. Returns {report_id, task_id, ...}"""
+    r = requests.post(
+        f"{BASE}/api/report/generate",
+        json={"simulation_id": sim_id},
+        timeout=10,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def poll_report(
+    task_id: str,
+    on_progress: Optional[Callable[[str], None]] = None,
+    interval: int = 3,
+) -> dict:
+    """Poll task until report generation completes."""
+    while True:
+        r = requests.get(f"{BASE}/api/graph/task/{task_id}", timeout=10)
+        r.raise_for_status()
+        payload = r.json()
+        data = payload.get("data") or payload
+        status = data.get("status", "")
+        if on_progress:
+            on_progress(str(data.get("message") or status))
+        if status in ("completed", "failed", "error"):
+            return data
+        time.sleep(interval)
+
+
+def get_result_url(report_id: str, port: int = 3000) -> str:
+    return f"http://localhost:{port}/report/{report_id}"

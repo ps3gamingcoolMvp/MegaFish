@@ -1,10 +1,24 @@
 """MegaFish CLI — terminal UI (red theme)."""
 
+import os
+from rich.box import Box
 from rich.console import Console
 from rich.theme import Theme
 from rich.panel import Panel
 from rich.prompt import Prompt
 import sys
+
+# Panel box with no bottom border (bottom row is spaces → invisible on dark bg)
+_NO_BOTTOM = Box(
+    "╭──╮\n"
+    "│  │\n"
+    "├──┤\n"
+    "│  │\n"
+    "├──┤\n"
+    "├──┤\n"
+    "│  │\n"
+    "    \n"
+)
 
 err_console = Console(stderr=True, theme=Theme({"default": "bold red"}))
 
@@ -47,20 +61,30 @@ LOGO_TEXT = r"""
 console = Console(theme=Theme({"default": "bold red"}))
 
 
+def _center_block(text: str) -> str:
+    """Shift every line by the same left-pad so the widest line is centered."""
+    try:
+        w = os.get_terminal_size().columns
+    except OSError:
+        w = 80
+    lines = text.splitlines()
+    max_len = max((len(line) for line in lines), default=0)
+    pad = max(0, (w - max_len) // 2)
+    return "\n".join(" " * pad + line for line in lines)
+
+
 def splash():
     console.clear()
-    console.print(FISH_ART, style="bold red")
-    console.print(LOGO_TEXT, style="bold red")
-    console.print("  v0.2.0  —  Multi-agent swarm intelligence engine", style="red")
-    console.print("─" * 66, style="red")
+    # Fish art: shift as a rigid block so the shape stays intact
+    console.print(_center_block(FISH_ART), style="bold red", markup=False)
+    # Logo and text: symmetric, fine to center line-by-line
+    console.print(LOGO_TEXT, style="bold red", justify="center")
+    console.print("v0.2.0  —  Multi-agent swarm intelligence engine", style="red", justify="center")
+    console.print("─" * 66, style="red", justify="center")
     console.print()
 
 
 def info_panel():
-    from rich.table import Table
-    from rich.columns import Columns
-    from rich.text import Text
-
     lines = [
         "  [bold red]What it does[/bold red]",
         "  Simulates public reaction to any scenario using AI agent swarms.",
@@ -85,6 +109,7 @@ def prompt_box() -> str:
         "[red]Enter a scenario to simulate:[/red]\n"
         "[dim]e.g. 'Apple announces $500 iPhone'  ·  'NATO expands to include Ukraine'[/dim]\n\n"
         "[dim]Press Ctrl+C to exit[/dim]",
+        box=_NO_BOTTOM,
         border_style="bold red",
         title="[bold red]  Scenario  [/bold red]",
         padding=(1, 2),
@@ -95,8 +120,14 @@ def prompt_box() -> str:
 
 
 def ask_file() -> str | None:
-    answer = Prompt.ask("[red]Attach a file? (path or Enter to skip)[/red]", default="")
-    return answer.strip() or None
+    while True:
+        answer = Prompt.ask("[red]Attach a file? (path or Enter to skip)[/red]", default="")
+        answer = answer.strip()
+        if not answer:
+            return None
+        if os.path.exists(answer):
+            return answer
+        console.print(f"[red]✗[/red] File not found: {answer!r} — press Enter to skip")
 
 
 def status(msg: str):
