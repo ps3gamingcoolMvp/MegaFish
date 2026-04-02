@@ -4,7 +4,7 @@
 
 set -e
 
-REPO="https://github.com/nikmcfly/MiroFish-Offline.git"
+REPO="https://github.com/Inventor-ai-god/MegaFish.git"
 INSTALL_DIR="$HOME/.megafish/app"
 WRAPPER="/usr/local/bin/megafish"
 RED='\033[0;31m'
