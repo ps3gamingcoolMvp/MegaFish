@@ -13,6 +13,7 @@ from .client import (
     generate_ontology,
     generate_report,
     get_result_url,
+    list_simulations,
     poll_prepare,
     poll_report,
     poll_simulation,
@@ -28,7 +29,7 @@ app = typer.Typer(
 )
 
 
-SUBCOMMANDS = {"install", "update", "uninstall", "status", "stop", "help"}
+SUBCOMMANDS = {"install", "update", "uninstall", "status", "stop", "help", "resume"}
 
 
 @app.callback()
@@ -98,7 +99,12 @@ def _run_simulation(prompt: str, file_path: str | None) -> str:
     if not sim_id:
         raise RuntimeError(f"Simulation creation failed: {sim_resp}")
 
-    # Step 4: Prepare simulation (generate agent personas)
+    return _run_from_sim_id(sim_id)
+
+
+def _run_from_sim_id(sim_id: str) -> str:
+    """Run prepare → start → poll → report for an existing simulation. Returns result URL."""
+    # Prepare simulation (generate agent personas)
     ui.status("Generating agent personas...")
     prep = prepare_simulation(sim_id)
     prep_data = prep.get("data") or prep
@@ -109,14 +115,14 @@ def _run_simulation(prompt: str, file_path: str | None) -> str:
         poll_prepare(prep_task_id, sim_id,
                      on_progress=lambda m: ui.status(f"Prepare: {m}"))
 
-    # Step 5: Start simulation
+    # Start simulation
     ui.status("Starting simulation...")
     start_simulation(sim_id)
 
-    # Step 6: Poll simulation to completion
+    # Poll simulation to completion
     poll_simulation(sim_id, on_progress=lambda m: ui.status(f"Sim: {m}"))
 
-    # Step 4: Generate report
+    # Generate report
     ui.status("Generating report...")
     rep = generate_report(sim_id)
     rep_data = rep.get("data") or rep
@@ -191,6 +197,91 @@ def help_cmd():
     ui.console.print("    3. Runs a social media simulation (Twitter / Reddit)")
     ui.console.print("    4. Opens results in your browser at localhost:3000\n")
     ui.console.print("  [red]v0.2.0  ·  AGPL-3.0  ·  Offline  ·  Local[/red]\n")
+
+
+@app.command()
+def resume(sim_id: str = typer.Argument(None, help="Simulation ID to resume (e.g. sim_abc123). Omit to pick from a list.")):
+    """Resume an existing simulation: prepare → start → run → report."""
+    try:
+        if not launcher.ensure_services():
+            ui.error("Backend failed to start. Check the log above.")
+            raise SystemExit(1)
+        ui.console.print()
+
+        if not sim_id:
+            sims = list_simulations()
+            if not sims:
+                ui.error("No simulations found. Run 'megafish' first to create one.")
+                raise SystemExit(1)
+            ui.console.print("[bold red]Available simulations:[/bold red]\n")
+            for i, s in enumerate(sims):
+                status_str = s.get("status", "unknown")
+                entities = s.get("entities_count", "?")
+                sid = s.get("simulation_id", "?")
+                ui.console.print(f"  [red]{i + 1}.[/red] {sid}  status=[red]{status_str}[/red]  entities={entities}")
+            ui.console.print()
+            choice = typer.prompt("Pick a number")
+            try:
+                sim_id = sims[int(choice) - 1]["simulation_id"]
+            except (ValueError, IndexError):
+                ui.error("Invalid choice.")
+                raise SystemExit(1)
+
+        ui.console.print(f"\n[red]Resuming[/red] {sim_id}\n")
+
+        sim_status = None
+        sims = list_simulations()
+        for s in sims:
+            if s.get("simulation_id") == sim_id:
+                sim_status = s.get("status")
+                break
+
+        if sim_status == "completed":
+            # Just open the existing report
+            from .client import BASE
+            import requests as _req
+            r = _req.get(f"{BASE}/api/report/by-simulation/{sim_id}", timeout=10)
+            if r.ok:
+                rep_data = (r.json().get("data") or r.json())
+                report_id = rep_data.get("report_id") or rep_data.get("id")
+                if report_id:
+                    port = launcher.check_frontend() or 3000
+                    url = get_result_url(report_id, port)
+                    ui.success(f"Already completed → {url}")
+                    launcher.open_browser(url)
+                    return
+            ui.error("Could not find report for completed simulation.")
+            raise SystemExit(1)
+
+        with ui.progress("Running simulation...") as prog:
+            task = prog.add_task("sim")
+            try:
+                if sim_status == "ready":
+                    ui.status("Simulation already prepared — skipping persona generation.")
+                    ui.status("Starting simulation...")
+                    start_simulation(sim_id)
+                    poll_simulation(sim_id, on_progress=lambda m: ui.status(f"Sim: {m}"))
+                    ui.status("Generating report...")
+                    rep = generate_report(sim_id)
+                    rep_data = rep.get("data") or rep
+                    report_id = rep_data.get("report_id")
+                    rep_task_id = rep_data.get("task_id")
+                    if rep_task_id:
+                        poll_report(rep_task_id, on_progress=lambda m: ui.status(f"Report: {m}"))
+                    if not report_id:
+                        raise RuntimeError(f"Report generation failed: {rep}")
+                    port = launcher.check_frontend() or 3000
+                    result_url = get_result_url(report_id, port)
+                else:
+                    result_url = _run_from_sim_id(sim_id)
+            finally:
+                prog.update(task, completed=100)
+
+        ui.success(f"Done → {result_url}")
+        launcher.open_browser(result_url)
+    except KeyboardInterrupt:
+        ui.console.print("\n[red]  Exiting MegaFish.[/red]")
+        raise SystemExit(0)
 
 
 if __name__ == "__main__":

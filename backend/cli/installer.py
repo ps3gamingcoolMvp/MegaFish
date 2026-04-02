@@ -48,8 +48,16 @@ def _check_node() -> bool:
         return False
 
 
-def _check_docker() -> bool:
-    return shutil.which("docker") is not None
+def _check_brew() -> bool:
+    return shutil.which("brew") is not None
+
+
+def _install_brew_if_needed():
+    if _is_mac() and not _check_brew():
+        status("Installing Homebrew...")
+        _run('/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"')
+        # Add brew to PATH for this session
+        _run('eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null || true')
 
 
 def _check_ollama() -> bool:
@@ -79,6 +87,14 @@ def run_install():
         sys.exit(0)
 
     console.print("\n[bold red]Checking dependencies...[/bold red]\n")
+
+    # Homebrew (macOS only, must come first)
+    if _is_mac():
+        if _check_brew():
+            success("Homebrew")
+        else:
+            _install_brew_if_needed()
+            success("Homebrew") if _check_brew() else error("Homebrew install failed — install manually: https://brew.sh")
 
     # Python 3.11+
     if _check_python():
@@ -119,22 +135,12 @@ def run_install():
         else:
             error("Node.js 18+ install failed — please install manually")
 
-    # Docker
-    if _check_docker():
-        success("Docker")
-    else:
-        error("Docker not found — install from https://www.docker.com/products/docker-desktop")
-
-    # Neo4j via Docker
-    status("Starting Neo4j (Docker)...")
-    neo4j_running = _run("docker ps | grep megafish-neo4j")
-    if not neo4j_running:
-        _run(
-            "docker run -d --name megafish-neo4j "
-            "-p 7474:7474 -p 7687:7687 "
-            "-e NEO4J_AUTH=neo4j/megafish "
-            "neo4j:5.18-community"
-        )
+    # Neo4j (native via Homebrew)
+    status("Installing/starting Neo4j...")
+    if not shutil.which("neo4j") and _is_mac():
+        _run("brew install neo4j")
+    _run("neo4j-admin dbms set-initial-password megafish 2>/dev/null || true")
+    _run("neo4j start")
     success("Neo4j")
 
     # Ollama
@@ -263,11 +269,11 @@ def run_uninstall():
     except Exception:
         pass
 
-    # Stop and remove Neo4j Docker container
-    if _run("docker ps -a --format '{{.Names}}' | grep -q megafish-neo4j"):
-        status("Stopping and removing Neo4j container...")
-        _run("docker stop megafish-neo4j && docker rm megafish-neo4j")
-        success("Neo4j container removed.")
+    # Stop Neo4j
+    if shutil.which("neo4j"):
+        status("Stopping Neo4j...")
+        _run("neo4j stop")
+        success("Neo4j stopped.")
 
     # Optionally remove simulation data
     megafish_dir = Path.home() / ".megafish"

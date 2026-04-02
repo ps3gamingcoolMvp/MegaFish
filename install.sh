@@ -68,6 +68,13 @@ if ! check git; then
     exit 1
 fi
 
+# Install Homebrew first on macOS if missing
+if [[ "$OS" == "Darwin" ]] && ! check brew; then
+    run "Installing Homebrew"
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null || true
+fi
+
 if ! check python3 || ! python3 -c "import sys; exit(0 if sys.version_info >= (3,11) else 1)" 2>/dev/null; then
     run "Installing Python 3.11"
     if [[ "$OS" == "Darwin" ]]; then
@@ -95,13 +102,6 @@ if ! check node || ! node -e "process.exit(parseInt(process.versions.node) >= 18
     fi
 fi
 ok "Node.js 18+"
-
-if check docker; then
-    ok "Docker"
-else
-    fail "Docker not found — install Docker Desktop and re-run: https://docker.com/products/docker-desktop"
-    exit 1
-fi
 
 if check ollama; then
     ok "Ollama"
@@ -143,13 +143,12 @@ ok "Node packages"
 
 # ── Neo4j ────────────────────────────────────────────────────────
 
-run "Starting Neo4j"
-if ! docker ps 2>/dev/null | grep -q megafish-neo4j; then
-    docker run -d --name megafish-neo4j \
-        -p 7474:7474 -p 7687:7687 \
-        -e NEO4J_AUTH=neo4j/megafish \
-        neo4j:5.18-community >/dev/null 2>&1 || true
+run "Installing Neo4j"
+if ! check neo4j; then
+    brew install neo4j || true
 fi
+neo4j-admin dbms set-initial-password megafish 2>/dev/null || true
+neo4j start 2>/dev/null || true
 ok "Neo4j"
 
 # ── .env ─────────────────────────────────────────────────────────

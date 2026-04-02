@@ -195,5 +195,16 @@ def poll_report(
         time.sleep(interval)
 
 
+def list_simulations() -> list:
+    """Return all simulations from GET /api/simulation/list."""
+    r = requests.get(f"{BASE}/api/simulation/list", timeout=10)
+    r.raise_for_status()
+    payload = r.json()
+    data = payload.get("data") or payload
+    if isinstance(data, list):
+        return data
+    return data.get("simulations", [])
+
+
 def get_result_url(report_id: str, port: int = 3000) -> str:
     return f"http://localhost:{port}/report/{report_id}"
