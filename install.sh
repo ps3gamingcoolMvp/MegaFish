@@ -168,9 +168,25 @@ cat > "$WRAPPER_TMP" << WRAPEOF
 cd "$INSTALL_DIR/backend"
 exec "$VENV_PYTHON" -m cli.main "\$@"
 WRAPEOF
-sudo mv "$WRAPPER_TMP" "$WRAPPER"
-sudo chmod +x "$WRAPPER"
-ok "megafish command installed"
+chmod +x "$WRAPPER_TMP"
+
+# Try system-wide install first, fall back to user-local
+if sudo mv "$WRAPPER_TMP" "$WRAPPER" 2>/dev/null && sudo chmod +x "$WRAPPER" 2>/dev/null; then
+    ok "megafish command installed → $WRAPPER"
+else
+    # Fallback: install to ~/.local/bin
+    mkdir -p "$HOME/.local/bin"
+    mv "$WRAPPER_TMP" "$HOME/.local/bin/megafish"
+    chmod +x "$HOME/.local/bin/megafish"
+    # Add to PATH in shell profile if not already there
+    for profile in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+        if [ -f "$profile" ] && ! grep -q '\.local/bin' "$profile"; then
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$profile"
+        fi
+    done
+    export PATH="$HOME/.local/bin:$PATH"
+    ok "megafish command installed → ~/.local/bin/megafish (open a new terminal to use)"
+fi
 
 # ── Marker ───────────────────────────────────────────────────────
 
